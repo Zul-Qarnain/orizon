@@ -43,7 +43,8 @@ describe('GridWise Public Sample Cases Pack (E2E)', () => {
     expect(res.body).toContain('POST /optimize-energy');
     expect(res.body).toContain('directive_interpretation');
     expect(res.body).toContain('solar_reduction');
-    expect(res.body).toContain('id="dropZone"');
+    expect(res.body).toContain('id="fileInput"');
+    expect(res.body).toContain('Choose JSON file');
     expect(res.body).toContain('id="scenarioJson"');
     expect(res.body).toContain('id="tabJsonBtn"');
     expect(res.body).toContain('Run all loaded cases');

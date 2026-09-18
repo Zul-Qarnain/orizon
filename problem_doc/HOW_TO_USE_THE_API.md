@@ -109,27 +109,13 @@ Hourly row: `hour`, `grid_kwh`, `solar_used_kwh`, `battery_action` (`charge` \| 
 
 ## Curl: SAMPLE-01 against production
 
-Use the official JSON (do not hard-code hidden-case wording):
-
 ```bash
-python3 - <<'PY'
-import json, urllib.request
-from pathlib import Path
-
-pack = json.loads(Path("problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json").read_text())
-case = next(c for c in pack["cases"] if c["input"]["scenario_id"] == "SAMPLE-01")
-req = urllib.request.Request(
-    "https://orizon-jet.vercel.app/optimize-energy",
-    data=json.dumps(case["input"]).encode(),
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
-with urllib.request.urlopen(req, timeout=30) as res:
-    body = json.loads(res.read().decode())
-print("status 200, cost", body["total_cost_bdt"])
-print([(d["directive_type"], d["applies"]) for d in body["directive_interpretation"]])
-PY
+curl -s -X POST https://orizon-jet.vercel.app/optimize-energy \
+  -H 'Content-Type: application/json' \
+  -d @problem_doc/SAMPLE-01.json
 ```
+
+Or open https://orizon-jet.vercel.app and use **Choose JSON file**.
 
 Expected for SAMPLE-01: `solar_reduction` then `no_op`, `total_cost_bdt` ≈ **38365**.
 

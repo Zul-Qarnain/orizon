@@ -143,10 +143,11 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
           <h2 class="text-sm font-semibold text-white">Scenario input</h2>
           <span class="text-xs text-slate-400">Upload, JSON editor, or form</span>
         </div>
+        <label class="block text-xs font-semibold text-emerald-400 uppercase tracking-wider">Choose JSON file</label>
+        <input type="file" id="fileInput" accept=".json,application/json" class="w-full text-sm text-slate-200 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-emerald-500 file:text-slate-950 file:font-semibold bg-slate-900 border border-slate-700 rounded-xl p-2" />
         <div id="dropZone" class="upload-zone rounded-xl p-4 text-center cursor-pointer">
-          <input type="file" id="fileInput" class="hidden" accept=".json,application/json" />
-          <p class="text-sm text-slate-200 font-medium"><i class="fa-solid fa-cloud-arrow-up mr-1.5 text-emerald-400"></i> Click to upload or drag &amp; drop JSON</p>
-          <p class="text-xs text-slate-500 mt-1">One scenario, <code class="text-slate-400">{ "input": ... }</code>, or a <code class="text-slate-400">cases[]</code> batch pack</p>
+          <p class="text-sm text-slate-200 font-medium"><i class="fa-solid fa-cloud-arrow-up mr-1.5 text-emerald-400"></i> Or drag &amp; drop JSON here</p>
+          <p class="text-xs text-slate-500 mt-1">One scenario, or a <code class="text-slate-400">cases[]</code> batch pack</p>
           <p id="uploadStatus" class="text-xs text-emerald-400 mt-2"></p>
         </div>
         <label class="block text-xs font-semibold text-emerald-400 uppercase tracking-wider">Load official public sample</label>

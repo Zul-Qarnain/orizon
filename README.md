@@ -65,44 +65,27 @@ curl -s http://127.0.0.1:3000/health
 
 Send **one** scenario JSON object. Get back **one** interpretation per operator note plus a 24-row hourly plan.
 
-**Live** (copy-paste from the repo root; posts official SAMPLE-01 `input`, not the whole pack file):
+**On the website (upload a file):** open https://orizon-jet.vercel.app → **Choose JSON file** or drop it on the box → **Run this scenario**. For a `cases[]` pack, use **Run all loaded cases**.
+
+**In the shell (curl only):**
 
 ```bash
-python3 - <<'PY'
-import json, urllib.request
-from pathlib import Path
-
-base = "https://orizon-jet.vercel.app"
-pack = json.loads(Path("problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json").read_text())
-body = next(c["input"] for c in pack["cases"] if c["input"]["scenario_id"] == "SAMPLE-01")
-
-req = urllib.request.Request(
-    base + "/optimize-energy",
-    data=json.dumps(body).encode(),
-    headers={"Content-Type": "application/json"},
-    method="POST",
-)
-with urllib.request.urlopen(req, timeout=30) as res:
-    out = json.loads(res.read().decode())
-print("HTTP", res.status)
-print("scenario_id", out["scenario_id"])
-print("directives", [(d["note_index"], d["directive_type"], d["applies"]) for d in out["directive_interpretation"]])
-print("hours", len(out["hourly_plan"]), "cost", out["total_cost_bdt"], "peak", out["peak_grid_kwh"])
-PY
+curl -s -X POST https://orizon-jet.vercel.app/optimize-energy \
+  -H 'Content-Type: application/json' \
+  -d @problem_doc/SAMPLE-01.json
 ```
 
-Expected for SAMPLE-01: HTTP 200, `solar_reduction` then `no_op`, hours `[12, 13]`, factor `0.25`, `total_cost_bdt` **38365**.
-
-Same POST with curl:
+Local / Docker:
 
 ```bash
-python3 -c 'import json,pathlib; p=json.loads(pathlib.Path("problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json").read_text()); print(json.dumps(next(c["input"] for c in p["cases"] if c["input"]["scenario_id"]=="SAMPLE-01")))' \
-| curl -s -X POST https://orizon-jet.vercel.app/optimize-energy \
-    -H 'Content-Type: application/json' \
-    -d @-
+curl -s -X POST http://127.0.0.1:3000/optimize-energy \
+  -H 'Content-Type: application/json' \
+  -d @problem_doc/SAMPLE-01.json
 ```
 
-Same calls against a local process: use `http://127.0.0.1:3000` instead of the Vercel host.
+`problem_doc/SAMPLE-01.json` is the official SAMPLE-01 request body (ready to POST). Expected: HTTP 200, `solar_reduction` then `no_op`, hours `[12, 13]`, factor `0.25`, `total_cost_bdt` **38365**.
+
+The other nine public bodies are `cases[].input` in `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json`. Upload that pack on the dashboard to batch-run them.
 
 ### 3.1 Request body (Problem Statement §7)
 
@@ -157,7 +140,7 @@ Shape (hours truncated — a real request needs all 24):
 }
 ```
 
-Worked 24-hour bodies: `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json` → `cases[].input`.
+Worked 24-hour body for curl: `problem_doc/SAMPLE-01.json`. Full pack: `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json`.
 
 ### 3.2 Response body (Problem Statement §10)
 
@@ -254,7 +237,7 @@ curl -s http://127.0.0.1:3000/health
 # {"status":"ok"}
 ```
 
-Dashboard (not scored): http://127.0.0.1:3000 — upload a scenario JSON, edit Raw JSON, or pick SAMPLE-01 and Run. Pack files with `cases[]` can be batch-tested from the same page.
+Dashboard (not scored): https://orizon-jet.vercel.app — **Choose JSON file**, edit Raw JSON, or pick a sample, then Run.
 
 `npm test` posts all **10** public cases from `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json` into the in-process API and checks interpretation + schedule replay.
 
