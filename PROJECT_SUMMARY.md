@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-**GridWise** is an LLM-powered campus energy optimization engine built for the **BUP CSE Fest 2026 Hackathon**. It accepts a 24-hour energy scenario with natural-language operator notes, interprets them using AI, and produces an optimized electricity schedule that minimizes cost while respecting all constraints.
+**GridWise** is an LLM-powered campus energy optimization engine. It accepts a 24-hour energy scenario with natural-language operator notes, interprets them using AI, and produces an optimized electricity schedule that minimizes cost while respecting all constraints.
 
 ---
 
@@ -81,9 +81,9 @@ orizon/
 │       └── schedule-validator.test.ts
 │
 ├── problem_doc/               # Challenge documentation
-│   ├── BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json
-│   ├── BUP_CSE_FEST_2026_Preliminary_Problem_Statement_GridWise_LLM.pdf
-│   ├── BUP_CSE_FEST_2026_Participant_Guide_&_Evaluation_Rubric_GridWise_LLM.pdf
+│   ├── public sample-cases JSON
+│   ├── problem-statement PDF
+│   ├── participant-guide PDF
 │   └── SAMPLE_TEST_RESULTS.md
 │
 ├── .env.example               # Environment template

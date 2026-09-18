@@ -1,6 +1,6 @@
 # GridWise LLM — campus energy optimizer
 
-BUP CSE Fest 2026 **Docker fallback** for the live API:
+**Docker fallback** for the live API:
 
 **https://orizon-jet.vercel.app**
 

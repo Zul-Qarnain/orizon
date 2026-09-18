@@ -1,12 +1,12 @@
 # How to use the GridWise API
 
-This is the team usage guide. The PDFs in this folder are the official BUP spec; they are not our runbook.
+This is the team usage guide. The PDFs in this folder are the official spec; they are not our runbook.
 
 | File | What it is |
 |---|---|
-| `BUP_CSE_FEST_2026_Preliminary_Problem_Statement_GridWise_LLM.pdf` | Canonical API contract, directives, energy rules |
-| `BUP_CSE_FEST_2026_Participant_Guide_&_Evaluation_Rubric_GridWise_LLM.pdf` | Submission, scoring, README requirements |
-| `BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json` | 10 worked public cases |
+| Problem-statement PDF in this folder | Canonical API contract, directives, energy rules |
+| Participant-guide PDF in this folder | Submission, scoring, README requirements |
+| Public sample-cases JSON in this folder | 10 worked public cases |
 | This file | How to call **our** deployed service |
 
 **Base URL:** https://orizon-jet.vercel.app
@@ -129,7 +129,7 @@ From repo root (no live LLM required for this pack):
 npm test
 ```
 
-That posts every case in `BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json` to the in-process API and checks interpretation + schedule replay.
+That posts every public sample case in `problem_doc/` to the in-process API and checks interpretation + schedule replay.
 
 ---
 

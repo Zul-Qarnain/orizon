@@ -1,6 +1,6 @@
 # GridWise LLM — Campus Energy Optimization API
 
-BUP CSE Fest 2026 preliminary. Public HTTPS API. **No login, no API key, no VPN.**
+Public HTTPS API. **No login, no API key, no VPN.**
 
 | | |
 |---|---|
@@ -85,7 +85,7 @@ curl -s -X POST http://127.0.0.1:3000/optimize-energy \
 
 `problem_doc/SAMPLE-01.json` is the official SAMPLE-01 request body (ready to POST). Expected: HTTP 200, `solar_reduction` then `no_op`, hours `[12, 13]`, factor `0.25`, `total_cost_bdt` **38365**.
 
-The other nine public bodies are `cases[].input` in `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json`. Upload that pack on the dashboard to batch-run them.
+The other nine public bodies are in the sample pack JSON under `problem_doc/` (`cases[].input`). Upload that pack on the dashboard to batch-run them.
 
 ### 3.1 Request body (Problem Statement §7)
 
@@ -140,7 +140,7 @@ Shape (hours truncated — a real request needs all 24):
 }
 ```
 
-Worked 24-hour body for curl: `problem_doc/SAMPLE-01.json`. Full pack: `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json`.
+Worked 24-hour body for curl: `problem_doc/SAMPLE-01.json`. Full pack: the public sample JSON in `problem_doc/`.
 
 ### 3.2 Response body (Problem Statement §10)
 
@@ -239,7 +239,7 @@ curl -s http://127.0.0.1:3000/health
 
 Dashboard (not scored): https://orizon-jet.vercel.app — **Choose JSON file**, edit Raw JSON, or pick a sample, then Run.
 
-`npm test` posts all **10** public cases from `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json` into the in-process API and checks interpretation + schedule replay.
+`npm test` posts all **10** public cases from the sample pack in `problem_doc/` into the in-process API and checks interpretation + schedule replay.
 
 `npm start` binds **`0.0.0.0:3000`**.
 
