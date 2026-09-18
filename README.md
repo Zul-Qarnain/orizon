@@ -4,6 +4,8 @@ BUP CSE Fest 2026 preliminary. **Mistral only.** Stateless Fastify service: natu
 
 **Live judge URL (no auth, no VPN):** https://orizon-jet.vercel.app
 
+On-site API docs: https://orizon-jet.vercel.app/#api-docs
+
 | Method | Path | What it does |
 |---|---|---|
 | `GET` | `/health` | `{ "status": "ok" }` |

@@ -25,7 +25,8 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
         </div>
       </div>
       <div class="flex items-center space-x-3">
-        <a href="#how-to-use" class="text-xs text-slate-300 hover:text-emerald-400 transition">How to use</a>
+        <a href="#api-docs" class="text-xs text-slate-300 hover:text-emerald-400 transition">API docs</a>
+        <a href="#how-to-use" class="text-xs text-slate-300 hover:text-emerald-400 transition">Try it</a>
         <span id="healthBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
           <span class="h-2 w-2 rounded-full bg-slate-500 mr-2"></span> Checking…
         </span>
@@ -34,6 +35,59 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
   </header>
 
   <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+    <section id="api-docs" class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl space-y-4">
+      <div>
+        <h2 class="text-sm font-semibold text-white mb-1">
+          <i class="fa-solid fa-book mr-1.5 text-emerald-400"></i> API docs
+        </h2>
+        <p class="text-xs text-slate-400">Same public HTTPS API the judge calls. No auth, no API key, no VPN. JSON in, JSON out. Base URL is this site.</p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+        <div class="bg-slate-950/70 border border-slate-700 rounded-xl p-3">
+          <div class="text-slate-400 mb-1">Health</div>
+          <code id="healthUrl" class="text-emerald-300 break-all">GET /health</code>
+          <div class="text-slate-500 mt-1">200: <code class="text-slate-300">{ "status": "ok" }</code></div>
+        </div>
+        <div class="bg-slate-950/70 border border-slate-700 rounded-xl p-3">
+          <div class="text-slate-400 mb-1">Optimize</div>
+          <code id="optimizeUrl" class="text-cyan-300 break-all">POST /optimize-energy</code>
+          <div class="text-slate-500 mt-1">200 plan · 400 bad body · 500 internal</div>
+        </div>
+        <div class="bg-slate-950/70 border border-slate-700 rounded-xl p-3">
+          <div class="text-slate-400 mb-1">This page</div>
+          <code class="text-slate-300">GET /</code>
+          <div class="text-slate-500 mt-1">Dashboard. Not scored.</div>
+        </div>
+      </div>
+      <div class="text-xs text-slate-300 space-y-2">
+        <p class="font-semibold text-white">Pipeline (one POST)</p>
+        <ol class="list-decimal list-inside space-y-1 text-slate-400">
+          <li>Validate body: <code class="text-slate-200">scenario_id</code>, 1–3 <code class="text-slate-200">operator_notes</code>, 24 <code class="text-slate-200">hours</code>, <code class="text-slate-200">battery</code></li>
+          <li>Mistral interprets each note into a directive (regex fallback if the LLM times out)</li>
+          <li>Guardrails sanitize hours / types / numbers</li>
+          <li>LP minimizes grid cost for 24 hours</li>
+          <li>Schedule is replayed; response includes <code class="text-slate-200">directive_interpretation</code> and <code class="text-slate-200">hourly_plan</code></li>
+        </ol>
+        <p>Hours are start-inclusive / end-exclusive. <code class="text-slate-200">noon until 2 PM</code> → <code class="text-emerald-300">[12, 13]</code>. <code class="text-slate-200">solar_reduction.factor</code> is remaining solar (<code class="text-slate-200">80% reduction</code> → <code class="text-emerald-300">0.2</code>).</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="text-slate-400 uppercase">
+            <tr><th class="py-2 pr-3">directive_type</th><th class="py-2">structured_adjustment</th></tr>
+          </thead>
+          <tbody class="text-slate-200 divide-y divide-slate-800">
+            <tr><td class="py-1.5 pr-3 font-mono text-emerald-300">solar_reduction</td><td class="py-1.5">{ hours, factor }</td></tr>
+            <tr><td class="py-1.5 pr-3 font-mono text-emerald-300">minimum_battery_reserve</td><td class="py-1.5">{ hours, minimum_energy_kwh }</td></tr>
+            <tr><td class="py-1.5 pr-3 font-mono text-emerald-300">no_charge_window</td><td class="py-1.5">{ hours }</td></tr>
+            <tr><td class="py-1.5 pr-3 font-mono text-emerald-300">no_discharge_window</td><td class="py-1.5">{ hours }</td></tr>
+            <tr><td class="py-1.5 pr-3 font-mono text-emerald-300">max_grid_window</td><td class="py-1.5">{ hours, max_grid_kwh }</td></tr>
+            <tr><td class="py-1.5 pr-3 font-mono text-emerald-300">no_op</td><td class="py-1.5">null (distractor)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-xs text-slate-500">200 response fields: scenario_id, directive_interpretation[], hourly_plan[24], total_grid_kwh, total_cost_bdt, peak_grid_kwh, plan_summary.</p>
+    </section>
 
     <section id="how-to-use" class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl">
       <h2 class="text-sm font-semibold text-white mb-1">
@@ -47,14 +101,12 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
       </ol>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-3">
         <div class="bg-slate-950/70 border border-slate-700 rounded-xl p-3">
-          <div class="text-slate-400 mb-1">Health</div>
-          <code id="healthUrl" class="text-emerald-300 break-all">GET /health</code>
-          <div class="text-slate-500 mt-1">Expected: <code class="text-slate-300">{ "status": "ok" }</code></div>
+          <div class="text-slate-400 mb-1">Health curl target</div>
+          <code class="text-emerald-300">GET /health</code>
         </div>
         <div class="bg-slate-950/70 border border-slate-700 rounded-xl p-3">
-          <div class="text-slate-400 mb-1">Optimize</div>
-          <code id="optimizeUrl" class="text-cyan-300 break-all">POST /optimize-energy</code>
-          <div class="text-slate-500 mt-1">JSON body: scenario_id, operator_notes (1–3), hours[24], battery</div>
+          <div class="text-slate-400 mb-1">Optimize curl target</div>
+          <code class="text-cyan-300">POST /optimize-energy</code>
         </div>
       </div>
       <div class="space-y-3">

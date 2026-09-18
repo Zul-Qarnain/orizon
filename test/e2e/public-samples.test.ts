@@ -32,6 +32,19 @@ describe('GridWise Public Sample Cases Pack (E2E)', () => {
     expect(res.json()).toEqual({ status: 'ok' });
   });
 
+  it('should serve API docs on GET /', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/'
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.body).toContain('id="api-docs"');
+    expect(res.body).toContain('POST /optimize-energy');
+    expect(res.body).toContain('directive_interpretation');
+    expect(res.body).toContain('solar_reduction');
+  });
+
   it('should run and validate all 10 public sample cases', async () => {
     const cases = samplePack.cases;
     expect(cases.length).toBe(10);
