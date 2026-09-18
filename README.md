@@ -26,7 +26,7 @@ curl -s https://orizon-jet.vercel.app/health
 The judge only needs the two contract endpoints. One request does this, in order:
 
 1. **Validate** the body with Zod (`scenario_id`, 1–3 `operator_notes`, 24 `hours`, `battery`).
-2. **Interpret notes with Mistral** (`mistral-small-latest`, JSON mode). This is on the real interpretation path, not just `plan_summary`. Extra keys in `MISTRAL_API_KEYS` are tried on 429. If Mistral times out (~3.5s) or returns junk, a deterministic parser fills that note.
+2. **Interpret notes with Mistral** (`mistral-small-latest`, JSON mode). This is on the real interpretation path, not just `plan_summary`. Extra keys in `MISTRAL_API_KEYS` are tried on 429. If Mistral times out (~1.4s) or returns junk, a deterministic parser fills that note. Repeat notes are cached in-memory on a warm instance.
 3. **Guardrails** treat LLM JSON as untrusted: allowed `directive_type` only, unique hours `0..23` ascending, start-inclusive / end-exclusive, `factor` in `[0,1]`. Invalid items become `no_op`.
 4. **Optimize** a 24-hour LP with `javascript-lp-solver`: minimize `Σ grid_kwh[h] * tariff`. Energy balance, battery SOC/rates, solar cap, grid cap, end-of-day neutrality.
 5. **Replay-validate** the plan at 0.01 tolerance. Return the JSON response (or 500 if the plan is internally inconsistent).

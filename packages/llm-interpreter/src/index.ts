@@ -9,7 +9,27 @@ export interface InterpretNotesParams {
 }
 
 const keyCooldownUntil = new Map<string, number>();
-const providerCooldownUntil = new Map<string, number>();
+const interpCache = new Map<string, { value: any[]; expires: number }>();
+const CACHE_TTL_MS = 10 * 60_000;
+const CACHE_MAX = 64;
+const DEFAULT_TIMEOUT_MS = 1400;
+const PER_KEY_BUDGET_MS = 850;
+let keyCursor = 0;
+let warmedMistral = false;
+
+export function warmupMistralConnection(): void {
+  if (warmedMistral) return;
+  warmedMistral = true;
+  setImmediate(() => {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 1500);
+    void fetch('https://api.mistral.ai/', { method: 'GET', signal: ac.signal })
+      .catch(() => {
+        warmedMistral = false;
+      })
+      .finally(() => clearTimeout(timer));
+  });
+}
 
 export async function interpretOperatorNotes(
   params: InterpretNotesParams
@@ -19,11 +39,19 @@ export async function interpretOperatorNotes(
     battery,
     apiKey,
     model = process.env.MISTRAL_MODEL || 'mistral-small-latest',
-    timeoutMs = 3500
+    timeoutMs = Number(process.env.LLM_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS
   } = params;
 
+  const cacheId = cacheKey(operator_notes, battery);
+  const cached = interpCache.get(cacheId);
+  if (cached && cached.expires > Date.now()) {
+    return cached.value;
+  }
+
   const fallback = parseNotesDeterministic(operator_notes, battery);
-  const mistralKeys = collectEnvKeys(apiKey, process.env.MISTRAL_API_KEY, process.env.MISTRAL_API_KEYS);
+  const mistralKeys = rotateKeys(
+    collectEnvKeys(apiKey, process.env.MISTRAL_API_KEY, process.env.MISTRAL_API_KEYS)
+  );
   const deadline = Date.now() + timeoutMs;
 
   const mistralMerged = await tryKeyRing(
@@ -34,9 +62,35 @@ export async function interpretOperatorNotes(
     fallback,
     deadline
   );
-  if (mistralMerged) return mistralMerged;
+  if (mistralMerged) {
+    rememberInterpretation(cacheId, mistralMerged);
+    return mistralMerged;
+  }
 
   return fallback;
+}
+
+function cacheKey(notes: string[], battery: BatterySpec): string {
+  return JSON.stringify({
+    n: notes,
+    c: battery.capacity_kwh,
+    mn: battery.minimum_energy_kwh
+  });
+}
+
+function rememberInterpretation(id: string, value: any[]): void {
+  if (interpCache.size >= CACHE_MAX) {
+    const oldest = interpCache.keys().next().value;
+    if (oldest) interpCache.delete(oldest);
+  }
+  interpCache.set(id, { value, expires: Date.now() + CACHE_TTL_MS });
+}
+
+function rotateKeys(keys: string[]): string[] {
+  if (keys.length <= 1) return keys;
+  const start = keyCursor % keys.length;
+  keyCursor += 1;
+  return keys.slice(start).concat(keys.slice(0, start));
 }
 
 function collectEnvKeys(...groups: Array<string | undefined>): string[] {
@@ -54,21 +108,17 @@ function collectEnvKeys(...groups: Array<string | undefined>): string[] {
 
 function cooldownMsFor(msg: string): number {
   if (/HTTP 401|HTTP 403/.test(msg)) return 10 * 60_000;
-  if (/HTTP 429/.test(msg)) return 25_000;
-  if (/HTTP 503/.test(msg)) return 8_000;
-  if (/HTTP 5\d\d/.test(msg)) return 5_000;
-  if (/aborted|AbortError|timeout/i.test(msg)) return 20_000;
+  if (/HTTP 429/.test(msg)) return 8_000;
+  if (/HTTP 503/.test(msg)) return 4_000;
+  if (/HTTP 5\d\d/.test(msg)) return 3_000;
+  if (/aborted|AbortError|timeout/i.test(msg)) return 2_000;
   return 0;
 }
 
-function markCooldown(label: string, key: string, msg: string, remainingKeys: number): void {
+function markCooldown(key: string, msg: string): void {
   const ms = cooldownMsFor(msg);
   if (!ms) return;
   keyCooldownUntil.set(key, Date.now() + ms);
-  const coolProvider = remainingKeys <= 0 || /aborted|AbortError|timeout/i.test(msg);
-  if (coolProvider) {
-    providerCooldownUntil.set(label, Date.now() + Math.min(ms, 20_000));
-  }
 }
 
 function isCooling(id: string, table: Map<string, number>): boolean {
@@ -89,9 +139,6 @@ async function tryKeyRing(
   fallback: any[],
   deadline: number
 ): Promise<any[] | null> {
-  if (isCooling(label, providerCooldownUntil)) {
-    return null;
-  }
   const usable = keys.filter((key) => !isCooling(key, keyCooldownUntil));
   if (usable.length === 0) return null;
 
@@ -99,16 +146,17 @@ async function tryKeyRing(
     const remaining = deadline - Date.now();
     if (remaining < 250) break;
     const key = usable[i];
+    const budget = Math.min(remaining, PER_KEY_BUDGET_MS);
     try {
-      const llmResult = await callApi(key, remaining);
+      const llmResult = await callApi(key, budget);
       if (Array.isArray(llmResult) && llmResult.length === expectedLen) {
         return llmResult.map((item, idx) => (isUsableLlmItem(item) ? item : fallback[idx]));
       }
     } catch (err: any) {
       const msg = String(err?.message || err);
-      markCooldown(label, key, msg, usable.length - i - 1);
-      const tryNext = /HTTP 429|HTTP 401|HTTP 403|HTTP 404|HTTP 5\d\d/.test(msg);
-      if (tryNext && i < usable.length - 1) {
+      markCooldown(key, msg);
+      const tryNext = /HTTP 429|HTTP 401|HTTP 403|HTTP 404|HTTP 5\d\d|aborted|AbortError|timeout/i.test(msg);
+      if (tryNext && i < usable.length - 1 && deadline - Date.now() >= 250) {
         console.warn(`${label} key ${i + 1}/${usable.length} failed (${msg.split(':')[0]}). Trying next key.`);
         continue;
       }
@@ -130,7 +178,7 @@ Types:
 - max_grid_window {hours, max_grid_kwh}
 - no_op applies=false structured_adjustment=null
 Hours: unique ints 0-23 ascending, start-inclusive/end-exclusive. noon-2PM=[12,13]; 2AM-5AM=[2,3,4]; 6PM-9PM=[18,19,20]; 11AM-2PM=[11,12,13].
-applies=true except no_op. Distractors=no_op. Do not invent demand/tariff/battery limits.`;
+applies=true except no_op. Distractors=no_op. explanation<=12 words. Do not invent demand/tariff/battery limits.`;
 
   const userPrompt = `Operator Notes to interpret:
 ${operatorNotes.map((note, idx) => `[Note ${idx}]: "${note}"`).join('\n')}`;
@@ -174,7 +222,7 @@ async function callMistralApi(
       body: JSON.stringify({
         model,
         temperature: 0.0,
-        max_tokens: 512,
+        max_tokens: 280,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },

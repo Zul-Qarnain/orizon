@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { OptimizeEnergyRequestSchema } from '@gridwise/shared-types';
-import { interpretOperatorNotes } from '@gridwise/llm-interpreter';
+import { interpretOperatorNotes, warmupMistralConnection } from '@gridwise/llm-interpreter';
 import { validateAndSanitizeDirectives } from '@gridwise/guardrails';
 import { optimizeSchedule } from '@gridwise/optimizer';
 import { validateSchedule } from '@gridwise/schedule-validator';
@@ -55,6 +55,11 @@ export function buildApp(): FastifyInstance {
 
   // Health Check
   app.get('/health', async (req: FastifyRequest, reply: FastifyReply) => {
+    try {
+      warmupMistralConnection();
+    } catch {
+      // Warmup must never fail readiness.
+    }
     return reply.status(200).send({ status: 'ok' });
   });
 
@@ -77,7 +82,7 @@ export function buildApp(): FastifyInstance {
       const rawInterpretations = await interpretOperatorNotes({
         operator_notes: body.operator_notes,
         battery: body.battery,
-        timeoutMs: 3500
+        timeoutMs: Number(process.env.LLM_TIMEOUT_MS) || 1400
       });
 
       // 3. Guardrail Validation Stage
