@@ -4,6 +4,8 @@ node_modules/
 # Build outputs & caches
 dist/
 *.tsbuildinfo
+*.d.ts.map
+*.js.map
 .next/
 .vercel/
 
@@ -15,6 +17,10 @@ api/index.js
 api/index.d.ts
 api/index.js.map
 api/index.d.ts.map
+
+# PDF & Binary files
+*.pdf
+problem_doc/*.pdf
 
 # Secrets & Environment variables
 .env
@@ -36,6 +42,10 @@ yarn-error.log*
 .idea/
 .marscode/
 .cursor/
+
+# Temporary text dumps & scratch files
 participant_guide.txt
 problem_statement.txt
 REQUIREMENTS_CHECK.md
+GridWise-Agent-Build-Prompt.md
+update.md
