@@ -100,29 +100,23 @@ Dashboard: `http://127.0.0.1:3000` (pick SAMPLE-01, Run).
 
 ## Docker fallback
 
-Image binds `0.0.0.0:3000`. No secrets in the image — pass the Mistral key at run time.
+Pullable image (public): **`javaman12/gridwise-llm:latest`**
 
 ```bash
-docker build -t gridwise-llm:latest .
+docker pull javaman12/gridwise-llm:latest
 docker run --rm -p 3000:3000 \
   -e HOST=0.0.0.0 \
   -e PORT=3000 \
   -e MISTRAL_API_KEY \
   -e MISTRAL_API_KEYS \
   -e MISTRAL_MODEL=mistral-small-latest \
-  gridwise-llm:latest
+  javaman12/gridwise-llm:latest
 
 curl -s http://127.0.0.1:3000/health
 # {"status":"ok"}
 ```
 
-To publish a pullable judge tag (Docker Hub example):
-
-```bash
-docker tag gridwise-llm:latest YOURUSER/gridwise-llm:latest
-docker push YOURUSER/gridwise-llm:latest
-docker pull YOURUSER/gridwise-llm:latest
-```
+Binds `0.0.0.0:3000`. No secrets in the image — pass the Mistral key at run time. Hub: https://hub.docker.com/r/javaman12/gridwise-llm
 
 ---
 
@@ -142,7 +136,7 @@ Set `MISTRAL_API_KEY` / `MISTRAL_API_KEYS` / `MISTRAL_MODEL` in the Vercel proje
 
 ## Known limitations
 
-- No Docker Hub/GHCR push from this workspace unless a registry login is provided. The `Dockerfile` is in the repo and builds locally.
+- Docker fallback image: `javaman12/gridwise-llm:latest` (public on Docker Hub).
 - No database.
 - Regex fallback is keyword-based; hidden paraphrases need the live Mistral key.
 - Mistral 429s skip that key for ~25s and try the next key.
