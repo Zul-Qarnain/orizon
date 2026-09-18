@@ -1,5 +1,11 @@
 {
   "version": 2,
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30,
+      "includeFiles": "problem_doc/**"
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

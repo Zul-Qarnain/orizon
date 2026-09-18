@@ -13,11 +13,30 @@ export interface OptimizationResult {
   peak_grid_kwh: number;
 }
 
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+function indexHours(hours: HourlyInput[]): HourlyInput[] {
+  const indexed: HourlyInput[] = new Array(24);
+  for (const hour of hours) {
+    indexed[hour.hour] = hour;
+  }
+  for (let h = 0; h < 24; h++) {
+    if (!indexed[h]) {
+      throw new Error(`Missing hour ${h} in input hours array.`);
+    }
+  }
+  return indexed;
+}
+
 export function optimizeSchedule(
   hours: HourlyInput[],
   battery: BatterySpec,
   directives: DirectiveInterpretation[]
 ): OptimizationResult {
+  const hourly = indexHours(hours);
+
   // 1. Calculate effective parameters per hour
   const effectiveSolar = new Array(24).fill(0);
   const activeMinEnergy = new Array(24).fill(battery.minimum_energy_kwh);
@@ -26,7 +45,7 @@ export function optimizeSchedule(
   const maxGridCap = new Array(24).fill(Infinity);
 
   for (let h = 0; h < 24; h++) {
-    effectiveSolar[h] = hours[h].solar_kwh;
+    effectiveSolar[h] = hourly[h].solar_kwh;
   }
 
   for (const d of directives) {
@@ -40,7 +59,7 @@ export function optimizeSchedule(
         const factor = adj.factor ?? 1;
         for (const h of targetHours) {
           if (h >= 0 && h < 24) {
-            effectiveSolar[h] = hours[h].solar_kwh * factor;
+            effectiveSolar[h] = hourly[h].solar_kwh * factor;
           }
         }
         break;
@@ -95,7 +114,7 @@ export function optimizeSchedule(
 
   for (let h = 0; h < 24; h++) {
     // Energy balance
-    model.constraints[`balance_${h}`] = { equal: hours[h].demand_kwh };
+    model.constraints[`balance_${h}`] = { equal: hourly[h].demand_kwh };
 
     // Battery SOC bounds
     model.constraints[`soc_${h}`] = {
@@ -122,7 +141,7 @@ export function optimizeSchedule(
     // Variables
     // Grid import g_h
     const gridVar: any = {
-      cost: hours[h].tariff_bdt_per_kwh,
+      cost: hourly[h].tariff_bdt_per_kwh,
       [`balance_${h}`]: 1
     };
     if (maxGridCap[h] !== Infinity) {
@@ -177,64 +196,78 @@ export function optimizeSchedule(
     throw new Error('Infeasible energy optimization scenario under given directives and constraints.');
   }
 
-  // 4. Extract schedule and compute exact totals
+  // 4. Extract schedule at 2-decimal precision with exact energy balance
   const hourly_plan: HourlyPlanItem[] = [];
   let total_grid_kwh = 0;
   let total_cost_bdt = 0;
   let peak_grid_kwh = 0;
+  let energy = battery.initial_energy_kwh;
 
   for (let h = 0; h < 24; h++) {
-    const rawGrid = solution[`g_${h}`] || 0;
     const rawSolar = solution[`s_${h}`] || 0;
     const rawCharge = solution[`c_${h}`] || 0;
     const rawDischarge = solution[`d_${h}`] || 0;
-    const rawEnergy = solution[`e_${h}`] || 0;
 
-    const grid = Math.max(0, Math.round(rawGrid * 10000) / 10000);
-    const solar = Math.max(0, Math.round(rawSolar * 10000) / 10000);
-    let charge = Math.max(0, Math.round(rawCharge * 10000) / 10000);
-    let discharge = Math.max(0, Math.round(rawDischarge * 10000) / 10000);
-    const energy = Math.round(rawEnergy * 10000) / 10000;
-
-    // Deduplicate minor floating point artifacts if both charge & discharge occur
+    let charge = Math.max(0, round2(rawCharge));
+    let discharge = Math.max(0, round2(rawDischarge));
     if (charge > 0 && discharge > 0) {
-      if (charge >= discharge) {
-        charge -= discharge;
-        discharge = 0;
-      } else {
-        discharge -= charge;
-        charge = 0;
+      const net = round2(charge - discharge);
+      charge = net > 0 ? net : 0;
+      discharge = net < 0 ? round2(-net) : 0;
+    }
+    if (charge <= 0.005) charge = 0;
+    if (discharge <= 0.005) discharge = 0;
+
+    let solar = Math.max(0, round2(rawSolar));
+    if (solar > effectiveSolar[h]) {
+      solar = round2(effectiveSolar[h]);
+    }
+
+    energy = round2(energy + charge - discharge);
+
+    if (h === 23) {
+      const target = round2(battery.initial_energy_kwh);
+      const drift = round2(energy - target);
+      if (drift !== 0 && Math.abs(drift) <= 0.05) {
+        if (drift > 0) {
+          if (charge >= drift) charge = round2(charge - drift);
+          else discharge = round2(discharge + drift);
+        } else {
+          const need = round2(-drift);
+          if (discharge >= need) discharge = round2(discharge - need);
+          else charge = round2(charge + need);
+        }
+        if (charge <= 0.005) charge = 0;
+        if (discharge <= 0.005) discharge = 0;
+        energy = target;
       }
     }
 
+    const grid = round2(Math.max(0, hourly[h].demand_kwh + charge - solar - discharge));
+
     let battery_action: 'charge' | 'discharge' | 'idle' = 'idle';
     let battery_kwh = 0;
-
-    if (charge > 1e-4) {
+    if (charge > 0) {
       battery_action = 'charge';
-      battery_kwh = Math.round(charge * 100) / 100;
-    } else if (discharge > 1e-4) {
+      battery_kwh = charge;
+    } else if (discharge > 0) {
       battery_action = 'discharge';
-      battery_kwh = Math.round(discharge * 100) / 100;
+      battery_kwh = discharge;
     }
-
-    const itemGrid = Math.round(grid * 100) / 100;
-    const itemSolar = Math.round(solar * 100) / 100;
-    const itemEnergy = Math.round(energy * 100) / 100;
 
     hourly_plan.push({
       hour: h,
-      grid_kwh: itemGrid,
-      solar_used_kwh: itemSolar,
+      grid_kwh: grid,
+      solar_used_kwh: solar,
       battery_action,
       battery_kwh,
-      battery_energy_after_kwh: itemEnergy
+      battery_energy_after_kwh: energy
     });
 
-    total_grid_kwh += itemGrid;
-    total_cost_bdt += itemGrid * hours[h].tariff_bdt_per_kwh;
-    if (itemGrid > peak_grid_kwh) {
-      peak_grid_kwh = itemGrid;
+    total_grid_kwh += grid;
+    total_cost_bdt += grid * hourly[h].tariff_bdt_per_kwh;
+    if (grid > peak_grid_kwh) {
+      peak_grid_kwh = grid;
     }
   }
 

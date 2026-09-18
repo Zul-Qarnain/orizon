@@ -35,6 +35,7 @@ yarn-error.log*
 .vscode/
 .idea/
 .marscode/
+.cursor/
 participant_guide.txt
 problem_statement.txt
 REQUIREMENTS_CHECK.md

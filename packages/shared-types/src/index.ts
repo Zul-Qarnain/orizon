@@ -67,20 +67,41 @@ export const HourlyInputSchema = z.object({
 
 export type HourlyInput = z.infer<typeof HourlyInputSchema>;
 
-export const BatterySpecSchema = z.object({
-  capacity_kwh: z.number().positive(),
-  initial_energy_kwh: z.number().min(0),
-  minimum_energy_kwh: z.number().min(0),
-  max_charge_kwh_per_hour: z.number().min(0),
-  max_discharge_kwh_per_hour: z.number().min(0)
-});
+export const BatterySpecSchema = z
+  .object({
+    capacity_kwh: z.number().positive(),
+    initial_energy_kwh: z.number().min(0),
+    minimum_energy_kwh: z.number().min(0),
+    max_charge_kwh_per_hour: z.number().min(0),
+    max_discharge_kwh_per_hour: z.number().min(0)
+  })
+  .refine((b) => b.minimum_energy_kwh <= b.capacity_kwh, {
+    message: 'minimum_energy_kwh cannot exceed capacity_kwh'
+  })
+  .refine((b) => b.initial_energy_kwh <= b.capacity_kwh, {
+    message: 'initial_energy_kwh cannot exceed capacity_kwh'
+  });
 
 export type BatterySpec = z.infer<typeof BatterySpecSchema>;
 
 export const OptimizeEnergyRequestSchema = z.object({
   scenario_id: z.string().min(1),
   operator_notes: z.array(z.string().min(1)).min(1).max(3),
-  hours: z.array(HourlyInputSchema).length(24),
+  hours: z
+    .array(HourlyInputSchema)
+    .length(24)
+    .superRefine((hours, ctx) => {
+      const seen = new Set<number>();
+      for (const hour of hours) {
+        if (seen.has(hour.hour)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Duplicate hour ${hour.hour} in hours array.`
+          });
+        }
+        seen.add(hour.hour);
+      }
+    }),
   battery: BatterySpecSchema
 });
 

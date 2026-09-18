@@ -25,6 +25,15 @@ describe('Optimizer Unit Tests', () => {
     expect(result.total_grid_kwh).toBeGreaterThan(0);
   });
 
+  it('should optimize even when hours array is not in hour order', () => {
+    const shuffled = [...dummyHours].reverse();
+    const result = optimizeSchedule(shuffled, dummyBattery, []);
+    expect(result.hourly_plan).toHaveLength(24);
+    expect(result.hourly_plan[0].hour).toBe(0);
+    expect(result.hourly_plan[23].hour).toBe(23);
+    expect(result.hourly_plan[23].battery_energy_after_kwh).toBe(dummyBattery.initial_energy_kwh);
+  });
+
   it('should obey no_charge_window directive', () => {
     const directives: any[] = [
       {

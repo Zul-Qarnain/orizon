@@ -1,12 +1,30 @@
 import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { OptimizeEnergyRequestSchema } from '@gridwise/shared-types';
 import { interpretOperatorNotes } from '@gridwise/llm-interpreter';
 import { validateAndSanitizeDirectives } from '@gridwise/guardrails';
 import { optimizeSchedule } from '@gridwise/optimizer';
 import { validateSchedule } from '@gridwise/schedule-validator';
 import { TEST_UI_HTML } from './ui.js';
+
+const SAMPLE_PACK_REL = 'problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json';
+let cachedSamplePack: string | null = null;
+
+function resolveSamplePackPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve(process.cwd(), SAMPLE_PACK_REL),
+    path.resolve(process.cwd(), '../../', SAMPLE_PACK_REL),
+    path.resolve(here, '../../../', SAMPLE_PACK_REL),
+    path.resolve(here, '../../../../', SAMPLE_PACK_REL)
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
 
 export function buildApp(): FastifyInstance {
   const app = Fastify({
@@ -22,9 +40,14 @@ export function buildApp(): FastifyInstance {
   // Sample pack JSON route for UI
   app.get('/sample-pack.json', async (req: FastifyRequest, reply: FastifyReply) => {
     try {
-      const samplePath = path.resolve(process.cwd(), 'problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json');
-      const content = fs.readFileSync(samplePath, 'utf-8');
-      return reply.type('application/json').send(content);
+      if (!cachedSamplePack) {
+        const samplePath = resolveSamplePackPath();
+        if (!samplePath) {
+          return reply.status(404).send({ error: 'Sample pack file not found.' });
+        }
+        cachedSamplePack = fs.readFileSync(samplePath, 'utf-8');
+      }
+      return reply.type('application/json').send(cachedSamplePack);
     } catch {
       return reply.status(404).send({ error: 'Sample pack file not found.' });
     }
@@ -54,7 +77,7 @@ export function buildApp(): FastifyInstance {
       const rawInterpretations = await interpretOperatorNotes({
         operator_notes: body.operator_notes,
         battery: body.battery,
-        timeoutMs: 15000
+        timeoutMs: 4000
       });
 
       // 3. Guardrail Validation Stage
@@ -79,7 +102,11 @@ export function buildApp(): FastifyInstance {
       );
 
       if (!valResult.valid) {
-        console.warn('Schedule validation warnings:', valResult.errors);
+        console.warn('Schedule validation failed:', valResult.errors);
+        return reply.status(500).send({
+          error: 'Internal Server Error',
+          message: 'An internal error occurred during optimization processing.'
+        });
       }
 
       // 6. Generate Plan Summary

@@ -11,21 +11,44 @@ export interface InterpretNotesParams {
 export async function interpretOperatorNotes(
   params: InterpretNotesParams
 ): Promise<any[]> {
-  const { operator_notes, battery, apiKey = process.env.MISTRAL_API_KEY, model = process.env.MISTRAL_MODEL || 'mistral-small-latest', timeoutMs = 8000 } = params;
+  const {
+    operator_notes,
+    battery,
+    apiKey = process.env.MISTRAL_API_KEY,
+    model = process.env.MISTRAL_MODEL || 'mistral-small-latest',
+    timeoutMs = 4000
+  } = params;
+
+  const fallback = parseNotesDeterministic(operator_notes, battery);
 
   if (apiKey && apiKey.trim().length > 0) {
     try {
       const llmResult = await callMistralApi(operator_notes, battery, apiKey, model, timeoutMs);
       if (Array.isArray(llmResult) && llmResult.length === operator_notes.length) {
-        return llmResult;
+        return llmResult.map((item, idx) => (isUsableLlmItem(item) ? item : fallback[idx]));
       }
     } catch (err: any) {
       console.warn(`Mistral API interpretation failed or timed out (${err.message}). Using deterministic fallback parser.`);
     }
   }
 
-  // Fallback to deterministic NLP / rule-based parser
-  return parseNotesDeterministic(operator_notes, battery);
+  return fallback;
+}
+
+function isUsableLlmItem(item: any): boolean {
+  if (!item || typeof item !== 'object') return false;
+  const allowed = [
+    'solar_reduction',
+    'minimum_battery_reserve',
+    'no_charge_window',
+    'no_discharge_window',
+    'max_grid_window',
+    'no_op'
+  ];
+  if (!allowed.includes(item.directive_type)) return false;
+  if (item.directive_type === 'no_op') return true;
+  const hours = item.structured_adjustment?.hours;
+  return Array.isArray(hours) && hours.length > 0;
 }
 
 async function callMistralApi(
@@ -86,6 +109,7 @@ ${operatorNotes.map((note, idx) => `[Note ${idx}]: "${note}"`).join('\n')}`;
       body: JSON.stringify({
         model,
         temperature: 0.0,
+        max_tokens: 1024,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },
@@ -147,8 +171,9 @@ function parseSingleNoteDeterministic(
   ) {
     let factor = 1.0;
 
-    const redMatch = text.match(/(\d+)%\s*reduction/);
-    const fracMatch = text.match(/(\d+)%\s*of/);
+    const redMatch = text.match(/(\d+)\s*%\s*reduction/)
+      || text.match(/(?:reduc(?:e|ed|ing)|cut)\b[\s\S]{0,48}?\b(?:by\s+)?(\d+)\s*%/);
+    const fracMatch = text.match(/(\d+)\s*%\s*of/);
 
     if (redMatch) {
       const pct = parseFloat(redMatch[1]);
@@ -292,16 +317,16 @@ function createNoOp(noteIndex: number) {
 }
 
 function extractHoursFromText(text: string): number[] {
-  // Pattern: "from X until/to Y" or "between X and Y"
-  const rangePattern = /(?:from|between)\s+(?:hour\s+)?(\d+\s*(?:am|pm)|noon|midnight|\d+)\s+(?:until|to|and)\s+(?:hour\s+)?(\d+\s*(?:am|pm)|noon|midnight|\d+)/i;
-  const match = text.match(rangePattern);
+  const rangePattern =
+    /(?:from|between|during)\s+(?:hour\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|\d+)\s+(?:until|to|and)\s+(?:hour\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?|noon|midnight|\d+)/i;
+  const dashPattern =
+    /(\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight)\s*[-–—]\s*(\d{1,2}(?::\d{2})?\s*(?:am|pm)|noon|midnight)/i;
+
+  const match = text.match(rangePattern) || text.match(dashPattern);
 
   if (match) {
-    const startStr = match[1];
-    const endStr = match[2];
-
-    const start = parseTimeString(startStr);
-    const end = parseTimeString(endStr);
+    const start = parseTimeString(match[1]);
+    const end = parseTimeString(match[2]);
 
     if (start !== null && end !== null && end > start) {
       const hours: number[] = [];
@@ -316,17 +341,23 @@ function extractHoursFromText(text: string): number[] {
 }
 
 function parseTimeString(str: string): number | null {
-  const s = str.trim().toLowerCase();
+  const s = str.trim().toLowerCase().replace(/\s+/g, '');
   if (s === 'noon') return 12;
   if (s === 'midnight') return 0;
 
-  const ampmMatch = s.match(/^(\d+)\s*(am|pm)$/);
+  const ampmMatch = s.match(/^(\d{1,2})(?::(\d{2}))?(am|pm)$/);
   if (ampmMatch) {
     let val = parseInt(ampmMatch[1], 10);
-    const mer = ampmMatch[2];
+    const mer = ampmMatch[3];
     if (mer === 'pm' && val < 12) val += 12;
     if (mer === 'am' && val === 12) val = 0;
     return val;
+  }
+
+  const hm = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (hm) {
+    const val = parseInt(hm[1], 10);
+    if (val >= 0 && val <= 23) return val;
   }
 
   const num = parseInt(s, 10);

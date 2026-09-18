@@ -18,7 +18,7 @@ export function validateSchedule(
   totalGridKwh: number,
   totalCostBdt: number,
   peakGridKwh: number,
-  tolerance = 0.05
+  tolerance = 0.01
 ): ScheduleValidationResult {
   const errors: string[] = [];
 
@@ -29,6 +29,11 @@ export function validateSchedule(
     };
   }
 
+  const hoursByIndex: HourlyInput[] = new Array(24);
+  for (const hour of hours) {
+    hoursByIndex[hour.hour] = hour;
+  }
+
   // Pre-calculate directive parameters
   const effectiveSolar = new Array(24).fill(0);
   const activeMinEnergy = new Array(24).fill(battery.minimum_energy_kwh);
@@ -37,7 +42,13 @@ export function validateSchedule(
   const maxGridCap = new Array(24).fill(Infinity);
 
   for (let h = 0; h < 24; h++) {
-    effectiveSolar[h] = hours[h].solar_kwh;
+    if (!hoursByIndex[h]) {
+      return {
+        valid: false,
+        errors: [`Missing hour ${h} in input hours array.`]
+      };
+    }
+    effectiveSolar[h] = hoursByIndex[h].solar_kwh;
   }
 
   for (const d of directives) {
@@ -51,7 +62,7 @@ export function validateSchedule(
         const factor = adj.factor ?? 1;
         for (const h of targetHours) {
           if (h >= 0 && h < 24) {
-            effectiveSolar[h] = hours[h].solar_kwh * factor;
+            effectiveSolar[h] = hoursByIndex[h].solar_kwh * factor;
           }
         }
         break;
@@ -119,7 +130,7 @@ export function validateSchedule(
 
     // 1. Energy balance
     const supply = grid + solarUsed + dischargeKwh;
-    const demandAndCharge = hours[h].demand_kwh + chargeKwh;
+    const demandAndCharge = hoursByIndex[h].demand_kwh + chargeKwh;
     if (Math.abs(supply - demandAndCharge) > tolerance) {
       errors.push(
         `Hour ${h}: energy balance violated. Supply=${supply.toFixed(2)}, Demand+Charge=${demandAndCharge.toFixed(2)}.`
@@ -174,7 +185,7 @@ export function validateSchedule(
     }
 
     calcTotalGrid += grid;
-    calcTotalCost += grid * hours[h].tariff_bdt_per_kwh;
+    calcTotalCost += grid * hoursByIndex[h].tariff_bdt_per_kwh;
     if (grid > calcPeakGrid) {
       calcPeakGrid = grid;
     }
