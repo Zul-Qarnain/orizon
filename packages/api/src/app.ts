@@ -7,7 +7,6 @@ import { interpretOperatorNotes } from '@gridwise/llm-interpreter';
 import { validateAndSanitizeDirectives } from '@gridwise/guardrails';
 import { optimizeSchedule } from '@gridwise/optimizer';
 import { validateSchedule } from '@gridwise/schedule-validator';
-import { TEST_UI_HTML } from './ui.js';
 
 const SAMPLE_PACK_REL = 'problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json';
 let cachedSamplePack: string | null = null;
@@ -34,6 +33,7 @@ export function buildApp(): FastifyInstance {
 
   // Interactive Test Dashboard UI
   app.get('/', async (req: FastifyRequest, reply: FastifyReply) => {
+    const { TEST_UI_HTML } = await import('./ui.js');
     return reply.type('text/html').status(200).send(TEST_UI_HTML);
   });
 
@@ -77,7 +77,7 @@ export function buildApp(): FastifyInstance {
       const rawInterpretations = await interpretOperatorNotes({
         operator_notes: body.operator_notes,
         battery: body.battery,
-        timeoutMs: 4000
+        timeoutMs: 3500
       });
 
       // 3. Guardrail Validation Stage

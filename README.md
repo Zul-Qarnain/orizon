@@ -1,217 +1,152 @@
-# GridWise LLM — Smart Campus Energy Optimization Engine
+# GridWise LLM — Campus Energy Optimization API
 
-> **BUP CSE Fest 2026 Preliminary Round Solution**
+BUP CSE Fest 2026 preliminary. **Mistral only.** Stateless Fastify service: natural-language operator notes → structured directives → cost-minimizing 24-hour campus energy plan.
 
-GridWise is a production-ready, TypeScript-based microservice that accepts a 24-hour campus energy scenario and 1–3 natural-language operator notes, interprets notes into machine-checkable grid directives using an LLM, deterministically validates them through guardrails, formulates a linear program (LP) to minimize electricity grid import costs, and validates the final schedule before returning.
+**Live judge URL (no auth, no VPN):** https://orizon-jet.vercel.app
+
+| Method | Path | What it does |
+|---|---|---|
+| `GET` | `/health` | `{ "status": "ok" }` |
+| `POST` | `/optimize-energy` | Full pipeline. JSON in, JSON out |
+| `GET` | `/` | Optional dashboard for humans |
+
+```bash
+curl -s https://orizon-jet.vercel.app/health
+# {"status":"ok"}
+```
+
+`POST /optimize-energy` with SAMPLE-01 should return HTTP 200, `solar_reduction` hours `[12,13]` factor `0.25`, second note `no_op`, 24-row `hourly_plan`, `total_cost_bdt` near **38365**.
 
 ---
 
-## 1. Architecture Overview
+## How the API works (judging path)
 
-GridWise implements a strict 5-stage pipeline where each stage is isolated, testable, and modular:
+The judge only needs the two contract endpoints. One request does this, in order:
 
-```
-Energy Data + Operator Notes 
-          │
-          ▼
-┌─────────────────────────┐
-│ 1. LLM Interpreter      │ Mistral API (or deterministic fallback parser)
-└─────────┬───────────────┘
-          │ Raw Interpretations
-          ▼
-┌─────────────────────────┐
-│ 2. Guardrail Validator  │ Schema enforcement, hour windowing, factor/reserve bounds
-└─────────┬───────────────┘
-          │ Machine-Checkable Directives
-          ▼
-┌─────────────────────────┐
-│ 3. Math LP Optimizer    │ Linear Program (grid/solar/battery flow & battery SOC recursion)
-└─────────┬───────────────┘
-          │ Hourly Plan (24h)
-          ▼
-┌─────────────────────────┐
-│ 4. Schedule Validator   │ Replays physical limits, energy balance & directive compliance
-└─────────┬───────────────┘
-          │ Validated Schedule
-          ▼
-┌─────────────────────────┐
-│ 5. Fastify API Response │ JSON Contract (HTTP 200)
-└─────────────────────────┘
-```
+1. **Validate** the body with Zod (`scenario_id`, 1–3 `operator_notes`, 24 `hours`, `battery`).
+2. **Interpret notes with Mistral** (`mistral-small-latest`, JSON mode). This is on the real interpretation path, not just `plan_summary`. Extra keys in `MISTRAL_API_KEYS` are tried on 429. If Mistral times out (~3.5s) or returns junk, a deterministic parser fills that note.
+3. **Guardrails** treat LLM JSON as untrusted: allowed `directive_type` only, unique hours `0..23` ascending, start-inclusive / end-exclusive, `factor` in `[0,1]`. Invalid items become `no_op`.
+4. **Optimize** a 24-hour LP with `javascript-lp-solver`: minimize `Σ grid_kwh[h] * tariff`. Energy balance, battery SOC/rates, solar cap, grid cap, end-of-day neutrality.
+5. **Replay-validate** the plan at 0.01 tolerance. Return the JSON response (or 500 if the plan is internally inconsistent).
 
-### Monorepo Structure
+Hours are **start-inclusive, end-exclusive**. `"noon until 2 PM"` → `[12, 13]`. `solar_reduction.factor` is the **remaining** solar fraction (`80% reduction` → `0.2`).
 
-```
-orizon/
-├── packages/
-│   ├── shared-types/          # Zod schemas & TypeScript contracts for request/response/directives
-│   ├── llm-interpreter/       # Mistral API integration + deterministic NLP fallback parser
-│   ├── guardrails/            # Deterministic validation & sanitization of LLM output
-│   ├── optimizer/             # LP model builder + solver adapter (javascript-lp-solver)
-│   ├── schedule-validator/    # Final schedule replay & constraint validator
-│   └── api/                   # Fastify HTTP server (/health & /optimize-energy)
-├── api/                       # Vercel serverless function handler (index.ts)
-├── test/
-│   ├── unit/                  # Unit tests per package (guardrails, optimizer, validator)
-│   └── e2e/                   # E2E test suite running all 10 public sample cases
-├── problem_doc/               # Official BUP CSE Fest public sample cases & PDF docs
-├── vercel.json                # Vercel Serverless deployment config
-├── .env.example
-├── package.json
-└── README.md
-```
+### Directive types
+
+| `directive_type` | `structured_adjustment` |
+|---|---|
+| `solar_reduction` | `{ hours, factor }` |
+| `minimum_battery_reserve` | `{ hours, minimum_energy_kwh }` |
+| `no_charge_window` | `{ hours }` |
+| `no_discharge_window` | `{ hours }` |
+| `max_grid_window` | `{ hours, max_grid_kwh }` |
+| `no_op` | `null` (distractor / not today's schedule) |
 
 ---
 
-## 2. LLM Role & Guardrails
+## How the project is structured
 
-- **LLM Provider**: Mistral AI (`mistral-small-latest` or `mistral-medium-latest`).
-- **Role**: Natural language interpretation of operator notes into one of 6 canonical directive types:
-  - `solar_reduction`: `{"hours": [...], "factor": number}` (factor = fraction remaining)
-  - `minimum_battery_reserve`: `{"hours": [...], "minimum_energy_kwh": number}`
-  - `no_charge_window`: `{"hours": [...]}`
-  - `no_discharge_window`: `{"hours": [...]}`
-  - `max_grid_window`: `{"hours": [...], "max_grid_kwh": number}`
-  - `no_op`: `null` (distractors or non-grid notes)
-- **Guardrail Layer (`@gridwise/guardrails`)**:
-  - Validates `directive_type` against the 6 canonical enum values.
-  - Ensures `hours` array contains strictly ascending, unique integers in `0..23` (start-inclusive, end-exclusive).
-  - Validates numeric boundaries (`solar_reduction.factor` $\in [0, 1]$, `minimum_energy_kwh` $\le$ battery capacity).
-  - Enforces `applies: false` iff `directive_type == 'no_op'`.
-  - Fallbacks malformed outputs cleanly to `no_op` without crashing.
+```
+packages/shared-types          Zod request/response/directive contracts
+packages/llm-interpreter       Mistral HTTP client + regex fallback
+packages/guardrails            Deterministic sanitizer
+packages/optimizer             24-hour LP
+packages/schedule-validator    Independent replay of the returned plan
+packages/api                   Fastify: /health and /optimize-energy
+api/index.ts                   Vercel serverless entry
+```
+
+No database. No Gemini. LLM → guardrails → optimizer → validator is four separate packages, not one model call.
 
 ---
 
-## 3. Mathematical Optimization Formulation
+## Environment
 
-GridWise models 24 hourly intervals ($h=0\dots23$) as a Linear Program (LP):
-
-$$\text{Minimize } \text{Total Cost} = \sum_{h=0}^{23} G_h \cdot T_h$$
-
-**Subject to:**
-
-1. **Per-Hour Energy Balance:**
-   $$G_h + S_h + D_h - C_h = \text{demand}_h \quad \forall h \in [0, 23]$$
-
-2. **Solar Availability Cap:**
-   $$0 \le S_h \le \text{effective\_solar}_h \quad \forall h \in [0, 23]$$
-
-3. **Battery State Recursion:**
-   - $h = 0: E_0 - C_0 + D_0 = E_{\text{initial}}$
-   - $h > 0: E_h - E_{h-1} - C_h + D_h = 0$
-
-4. **Battery Energy Bounds:**
-   $$\text{active\_min}_h \le E_h \le \text{capacity} \quad \forall h \in [0, 23]$$
-
-5. **Charge / Discharge Limits:**
-   $$0 \le C_h \le \text{max\_charge}_h, \quad 0 \le D_h \le \text{max\_discharge}_h$$
-
-6. **End-of-Day Neutrality:**
-   $$E_{23} = E_{\text{initial}}$$
-
----
-
-## 4. Environment Variables
-
-Create a `.env` file based on `.env.example`:
+Copy `.env.example` to `.env.local` (never commit secrets):
 
 ```bash
 MISTRAL_API_KEY=your_mistral_api_key_here
+MISTRAL_API_KEYS=optional_second_key,optional_third_key
 MISTRAL_MODEL=mistral-small-latest
 HOST=0.0.0.0
 PORT=3000
 ```
 
-*Note: If `MISTRAL_API_KEY` is not provided, GridWise seamlessly switches to its built-in deterministic NLP fallback parser.*
+Live endpoint must have `MISTRAL_API_KEY` so hidden paraphrases are not regex-only. Do not log or return the key.
 
 ---
 
-## 5. Local Quickstart & Execution
+## Local run and tests
 
 ```bash
-# 1. Clone the repository
 git clone https://github.com/Zul-Qarnain/orizon.git
 cd orizon
-
-# 2. Install dependencies
 npm install
-
-# 3. Build all TypeScript packages
 npm run build
-
-# 4. Run full test suite (unit + 10 E2E public sample cases)
 npm test
-
-# 5. Start local HTTP API server
 npm start
 ```
 
+`npm test` runs unit tests plus all 10 public cases in `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json`.
+
+```bash
+curl -s http://127.0.0.1:3000/health
+# {"status":"ok"}
+```
+
+Dashboard: `http://127.0.0.1:3000` (pick SAMPLE-01, Run).
+
 ---
 
-## 6. Verification & `curl` Examples
+## Docker fallback
 
-### `GET /health`
-
-```bash
-curl -X GET http://localhost:3000/health
-```
-
-**Expected Response (200 OK):**
-```json
-{ "status": "ok" }
-```
-
-### `POST /optimize-energy`
+Image binds `0.0.0.0:3000`. No secrets in the image — pass the Mistral key at run time.
 
 ```bash
-curl -X POST http://localhost:3000/optimize-energy \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenario_id": "SAMPLE-01",
-    "operator_notes": [
-      "Facilities will wash the rooftop solar panels from noon until 2 PM. During cleaning, usable solar should be treated as roughly 25% of the forecast.",
-      "The sports office moved next month registration deadline."
-    ],
-    "hours": [
-      { "hour": 0, "demand_kwh": 90, "solar_kwh": 0, "tariff_bdt_per_kwh": 6 },
-      { "hour": 1, "demand_kwh": 85, "solar_kwh": 0, "tariff_bdt_per_kwh": 6 },
-      { "hour": 2, "demand_kwh": 80, "solar_kwh": 0, "tariff_bdt_per_kwh": 5 },
-      { "hour": 3, "demand_kwh": 80, "solar_kwh": 0, "tariff_bdt_per_kwh": 5 },
-      { "hour": 4, "demand_kwh": 85, "solar_kwh": 0, "tariff_bdt_per_kwh": 5 },
-      { "hour": 5, "demand_kwh": 95, "solar_kwh": 0, "tariff_bdt_per_kwh": 6 },
-      { "hour": 6, "demand_kwh": 110, "solar_kwh": 5, "tariff_bdt_per_kwh": 8 },
-      { "hour": 7, "demand_kwh": 130, "solar_kwh": 20, "tariff_bdt_per_kwh": 10 },
-      { "hour": 8, "demand_kwh": 150, "solar_kwh": 50, "tariff_bdt_per_kwh": 12 },
-      { "hour": 9, "demand_kwh": 165, "solar_kwh": 90, "tariff_bdt_per_kwh": 14 },
-      { "hour": 10, "demand_kwh": 175, "solar_kwh": 130, "tariff_bdt_per_kwh": 16 },
-      { "hour": 11, "demand_kwh": 180, "solar_kwh": 160, "tariff_bdt_per_kwh": 16 },
-      { "hour": 12, "demand_kwh": 185, "solar_kwh": 180, "tariff_bdt_per_kwh": 15 },
-      { "hour": 13, "demand_kwh": 180, "solar_kwh": 170, "tariff_bdt_per_kwh": 14 },
-      { "hour": 14, "demand_kwh": 170, "solar_kwh": 140, "tariff_bdt_per_kwh": 13 },
-      { "hour": 15, "demand_kwh": 165, "solar_kwh": 90, "tariff_bdt_per_kwh": 14 },
-      { "hour": 16, "demand_kwh": 170, "solar_kwh": 45, "tariff_bdt_per_kwh": 18 },
-      { "hour": 17, "demand_kwh": 185, "solar_kwh": 10, "tariff_bdt_per_kwh": 22 },
-      { "hour": 18, "demand_kwh": 205, "solar_kwh": 0, "tariff_bdt_per_kwh": 28 },
-      { "hour": 19, "demand_kwh": 215, "solar_kwh": 0, "tariff_bdt_per_kwh": 30 },
-      { "hour": 20, "demand_kwh": 205, "solar_kwh": 0, "tariff_bdt_per_kwh": 26 },
-      { "hour": 21, "demand_kwh": 175, "solar_kwh": 0, "tariff_bdt_per_kwh": 18 },
-      { "hour": 22, "demand_kwh": 135, "solar_kwh": 0, "tariff_bdt_per_kwh": 10 },
-      { "hour": 23, "demand_kwh": 105, "solar_kwh": 0, "tariff_bdt_per_kwh": 7 }
-    ],
-    "battery": {
-      "capacity_kwh": 220,
-      "initial_energy_kwh": 110,
-      "minimum_energy_kwh": 40,
-      "max_charge_kwh_per_hour": 50,
-      "max_discharge_kwh_per_hour": 50
-    }
-  }'
+docker build -t gridwise-llm:latest .
+docker run --rm -p 3000:3000 \
+  -e HOST=0.0.0.0 \
+  -e PORT=3000 \
+  -e MISTRAL_API_KEY \
+  -e MISTRAL_API_KEYS \
+  -e MISTRAL_MODEL=mistral-small-latest \
+  gridwise-llm:latest
+
+curl -s http://127.0.0.1:3000/health
+# {"status":"ok"}
+```
+
+To publish a pullable judge tag (Docker Hub example):
+
+```bash
+docker tag gridwise-llm:latest YOURUSER/gridwise-llm:latest
+docker push YOURUSER/gridwise-llm:latest
+docker pull YOURUSER/gridwise-llm:latest
 ```
 
 ---
 
-## 7. Cloud Deployment Target & Notes
+## Live deploy (Vercel)
 
-- **Cloud Platform**: Vercel Serverless Functions / Free Tier Web Service.
-- **Entrypoint**: `api/index.ts` with root `vercel.json` rewrites.
-- **Docker Note**: Per the updated challenge specification (Section 8a), deployment is performed directly to a free-tier cloud host without a Docker image.
+Host: **Vercel** (`cdg1`), because it is public HTTPS with no login. Hobby `maxDuration` is 30s. Entrypoint `api/index.ts`.
+
+```bash
+npx vercel --prod
+```
+
+Set `MISTRAL_API_KEY` / `MISTRAL_API_KEYS` / `MISTRAL_MODEL` in the Vercel project. Ping `/health` during judging so the Hobby function stays warm.
+
+**Base URL:** https://orizon-jet.vercel.app
+
+---
+
+## Known limitations
+
+- No Docker Hub/GHCR push from this workspace unless a registry login is provided. The `Dockerfile` is in the repo and builds locally.
+- No database.
+- Regex fallback is keyword-based; hidden paraphrases need the live Mistral key.
+- Mistral 429s skip that key for ~25s and try the next key.
+
+## Dependencies
+
+Node.js ≥ 20. TypeScript, Fastify 5, Zod, Vitest, `javascript-lp-solver`, Mistral HTTP API (`fetch`).

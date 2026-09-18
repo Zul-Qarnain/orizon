@@ -24,15 +24,59 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
           <p class="text-xs text-slate-400">Smart Campus Energy Optimization Tester</p>
         </div>
       </div>
-      <div class="flex items-center space-x-4">
-        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-          <span class="h-2 w-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span> Service Active
+      <div class="flex items-center space-x-3">
+        <a href="#how-to-use" class="text-xs text-slate-300 hover:text-emerald-400 transition">How to use</a>
+        <span id="healthBadge" class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+          <span class="h-2 w-2 rounded-full bg-slate-500 mr-2"></span> Checking…
         </span>
       </div>
     </div>
   </header>
 
-  <main class="max-w-7xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+  <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+    <section id="how-to-use" class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl">
+      <h2 class="text-sm font-semibold text-white mb-1">
+        <i class="fa-solid fa-circle-info mr-1.5 text-emerald-400"></i> How to test this API
+      </h2>
+      <p class="text-xs text-slate-400 mb-4">This page talks to the same endpoints the judge uses. No login required.</p>
+      <ol class="text-sm text-slate-200 space-y-2 list-decimal list-inside mb-4">
+        <li>Pick a public sample below, or type 1–3 operator notes yourself.</li>
+        <li>Click <span class="text-emerald-400 font-semibold">Run Optimization Pipeline</span>.</li>
+        <li>Read interpreted directives, cost, and the 24-hour schedule on the right.</li>
+      </ol>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-3">
+        <div class="bg-slate-950/70 border border-slate-700 rounded-xl p-3">
+          <div class="text-slate-400 mb-1">Health</div>
+          <code id="healthUrl" class="text-emerald-300 break-all">GET /health</code>
+          <div class="text-slate-500 mt-1">Expected: <code class="text-slate-300">{ "status": "ok" }</code></div>
+        </div>
+        <div class="bg-slate-950/70 border border-slate-700 rounded-xl p-3">
+          <div class="text-slate-400 mb-1">Optimize</div>
+          <code id="optimizeUrl" class="text-cyan-300 break-all">POST /optimize-energy</code>
+          <div class="text-slate-500 mt-1">JSON body: scenario_id, operator_notes (1–3), hours[24], battery</div>
+        </div>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-slate-400 font-semibold">Health curl</span>
+            <button type="button" onclick="copyFromPre('healthCurl')" class="px-2 py-1 text-xs rounded-lg bg-slate-900 border border-slate-600 hover:border-emerald-500 text-slate-200">Copy</button>
+          </div>
+          <pre id="healthCurl" class="text-[11px] leading-5 bg-slate-950 border border-slate-700 rounded-xl p-3 overflow-x-auto text-emerald-300 whitespace-pre-wrap">curl -s https://orizon-jet.vercel.app/health</pre>
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-slate-400 font-semibold">Optimize curl (uses the sample currently loaded below)</span>
+            <button type="button" onclick="copyFromPre('optimizeCurl')" class="px-2 py-1 text-xs rounded-lg bg-slate-900 border border-slate-600 hover:border-cyan-500 text-slate-200">Copy</button>
+          </div>
+          <pre id="optimizeCurl" class="text-[11px] leading-5 bg-slate-950 border border-slate-700 rounded-xl p-3 overflow-x-auto max-h-48 text-cyan-300 whitespace-pre-wrap">curl -s -X POST https://orizon-jet.vercel.app/optimize-energy -H "Content-Type: application/json" -d '{"scenario_id":"SAMPLE-01","operator_notes":["..."]}'</pre>
+        </div>
+        <span id="copyStatus" class="text-xs text-emerald-400"></span>
+      </div>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
     
     <!-- Left Column: Input Form & Sample Case Selector -->
     <section class="lg:col-span-5 space-y-6">
@@ -179,6 +223,7 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
       </div>
 
     </section>
+    </div>
   </main>
 
   <script>
@@ -214,6 +259,90 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
 
     let currentHoursData = DEFAULT_HOURS;
 
+    function apiBase() {
+      return window.location.origin;
+    }
+
+    function buildRequestBody() {
+      const notes = [
+        document.getElementById('note1').value.trim(),
+        document.getElementById('note2').value.trim(),
+        document.getElementById('note3').value.trim()
+      ].filter(n => n.length > 0);
+      return {
+        scenario_id: document.getElementById('scenarioId').value || 'CUSTOM-01',
+        operator_notes: notes.length > 0 ? notes : ['No operational constraints given.'],
+        hours: currentHoursData,
+        battery: {
+          capacity_kwh: parseFloat(document.getElementById('batCapacity').value),
+          initial_energy_kwh: parseFloat(document.getElementById('batInitial').value),
+          minimum_energy_kwh: parseFloat(document.getElementById('batMin').value),
+          max_charge_kwh_per_hour: parseFloat(document.getElementById('batMaxCharge').value),
+          max_discharge_kwh_per_hour: parseFloat(document.getElementById('batMaxDischarge').value)
+        }
+      };
+    }
+
+    function flashCopied(msg) {
+      const el = document.getElementById('copyStatus');
+      el.innerText = msg;
+      setTimeout(function () { el.innerText = ''; }, 2000);
+    }
+
+    function copyText(text, okMsg) {
+      function fallback() {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        flashCopied(okMsg);
+      }
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(function () { flashCopied(okMsg); }).catch(fallback);
+      } else {
+        fallback();
+      }
+    }
+
+    function refreshCurlSamples() {
+      const base = apiBase();
+      const nl = String.fromCharCode(10);
+      document.getElementById('healthUrl').innerText = 'GET ' + base + '/health';
+      document.getElementById('optimizeUrl').innerText = 'POST ' + base + '/optimize-energy';
+      document.getElementById('healthCurl').innerText = 'curl -s ' + base + '/health';
+      const payload = JSON.stringify(buildRequestBody());
+      document.getElementById('optimizeCurl').innerText =
+        'curl -s -X POST ' + base + '/optimize-energy' + nl +
+        '  -H "Content-Type: application/json"' + nl +
+        '  -d ' + JSON.stringify(payload);
+    }
+
+    function copyFromPre(id) {
+      copyText(document.getElementById(id).innerText, 'Copied ' + id.replace('Curl', '') + ' curl');
+    }
+
+    async function pingHealth() {
+      const badge = document.getElementById('healthBadge');
+      try {
+        const res = await fetch('/health');
+        const data = await res.json();
+        if (res.ok && data.status === 'ok') {
+          badge.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+          badge.innerHTML = '<span class="h-2 w-2 rounded-full bg-emerald-400 mr-2 animate-pulse"></span> GET /health ok';
+          return;
+        }
+        throw new Error('bad health');
+      } catch {
+        badge.className = 'inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20';
+        badge.innerHTML = '<span class="h-2 w-2 rounded-full bg-red-400 mr-2"></span> Health failed';
+      }
+    }
+
     async function loadSampleCase() {
       const select = document.getElementById('sampleSelect');
       const caseId = select.value;
@@ -243,6 +372,7 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
             document.getElementById('batMaxDischarge').value = found.input.battery.max_discharge_kwh_per_hour;
 
             currentHoursData = found.input.hours;
+            refreshCurlSamples();
           }
         }
       } catch (e) {
@@ -255,24 +385,7 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
       runBtn.disabled = true;
       runBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> <span>Optimizing...</span>';
 
-      const notes = [
-        document.getElementById('note1').value.trim(),
-        document.getElementById('note2').value.trim(),
-        document.getElementById('note3').value.trim()
-      ].filter(n => n.length > 0);
-
-      const requestBody = {
-        scenario_id: document.getElementById('scenarioId').value || 'CUSTOM-01',
-        operator_notes: notes.length > 0 ? notes : ['No operational constraints given.'],
-        hours: currentHoursData,
-        battery: {
-          capacity_kwh: parseFloat(document.getElementById('batCapacity').value),
-          initial_energy_kwh: parseFloat(document.getElementById('batInitial').value),
-          minimum_energy_kwh: parseFloat(document.getElementById('batMin').value),
-          max_charge_kwh_per_hour: parseFloat(document.getElementById('batMaxCharge').value),
-          max_discharge_kwh_per_hour: parseFloat(document.getElementById('batMaxDischarge').value)
-        }
-      };
+      const requestBody = buildRequestBody();
 
       try {
         const res = await fetch('/optimize-energy', {
@@ -347,6 +460,8 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
 
     // Auto load default case 1 on start
     window.addEventListener('DOMContentLoaded', () => {
+      refreshCurlSamples();
+      pingHealth();
       document.getElementById('sampleSelect').value = 'SAMPLE-01';
       loadSampleCase();
     });

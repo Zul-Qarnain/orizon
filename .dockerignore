@@ -1,0 +1,16 @@
+node_modules
+**/node_modules
+packages/*/dist
+.git
+.vercel
+.env
+.env.local
+.env.*.local
+*.pdf
+*.md
+!README.md
+.cursor
+.vscode
+.idea
+test
+**/*.tsbuildinfo

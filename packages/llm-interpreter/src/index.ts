@@ -8,31 +8,133 @@ export interface InterpretNotesParams {
   timeoutMs?: number;
 }
 
+const keyCooldownUntil = new Map<string, number>();
+const providerCooldownUntil = new Map<string, number>();
+
 export async function interpretOperatorNotes(
   params: InterpretNotesParams
 ): Promise<any[]> {
   const {
     operator_notes,
     battery,
-    apiKey = process.env.MISTRAL_API_KEY,
+    apiKey,
     model = process.env.MISTRAL_MODEL || 'mistral-small-latest',
-    timeoutMs = 4000
+    timeoutMs = 3500
   } = params;
 
   const fallback = parseNotesDeterministic(operator_notes, battery);
+  const mistralKeys = collectEnvKeys(apiKey, process.env.MISTRAL_API_KEY, process.env.MISTRAL_API_KEYS);
+  const deadline = Date.now() + timeoutMs;
 
-  if (apiKey && apiKey.trim().length > 0) {
+  const mistralMerged = await tryKeyRing(
+    'Mistral',
+    mistralKeys,
+    (key, remaining) => callMistralApi(operator_notes, battery, key, model, remaining),
+    operator_notes.length,
+    fallback,
+    deadline
+  );
+  if (mistralMerged) return mistralMerged;
+
+  return fallback;
+}
+
+function collectEnvKeys(...groups: Array<string | undefined>): string[] {
+  const raw = groups.flatMap((group) => (group || '').split(/[,;\n]+/));
+  const seen = new Set<string>();
+  const keys: string[] = [];
+  for (const part of raw) {
+    const key = part.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
+
+function cooldownMsFor(msg: string): number {
+  if (/HTTP 401|HTTP 403/.test(msg)) return 10 * 60_000;
+  if (/HTTP 429/.test(msg)) return 25_000;
+  if (/HTTP 503/.test(msg)) return 8_000;
+  if (/HTTP 5\d\d/.test(msg)) return 5_000;
+  if (/aborted|AbortError|timeout/i.test(msg)) return 20_000;
+  return 0;
+}
+
+function markCooldown(label: string, key: string, msg: string, remainingKeys: number): void {
+  const ms = cooldownMsFor(msg);
+  if (!ms) return;
+  keyCooldownUntil.set(key, Date.now() + ms);
+  const coolProvider = remainingKeys <= 0 || /aborted|AbortError|timeout/i.test(msg);
+  if (coolProvider) {
+    providerCooldownUntil.set(label, Date.now() + Math.min(ms, 20_000));
+  }
+}
+
+function isCooling(id: string, table: Map<string, number>): boolean {
+  const until = table.get(id) || 0;
+  if (!until) return false;
+  if (Date.now() >= until) {
+    table.delete(id);
+    return false;
+  }
+  return true;
+}
+
+async function tryKeyRing(
+  label: string,
+  keys: string[],
+  callApi: (key: string, remaining: number) => Promise<any[]>,
+  expectedLen: number,
+  fallback: any[],
+  deadline: number
+): Promise<any[] | null> {
+  if (isCooling(label, providerCooldownUntil)) {
+    return null;
+  }
+  const usable = keys.filter((key) => !isCooling(key, keyCooldownUntil));
+  if (usable.length === 0) return null;
+
+  for (let i = 0; i < usable.length; i++) {
+    const remaining = deadline - Date.now();
+    if (remaining < 250) break;
+    const key = usable[i];
     try {
-      const llmResult = await callMistralApi(operator_notes, battery, apiKey, model, timeoutMs);
-      if (Array.isArray(llmResult) && llmResult.length === operator_notes.length) {
+      const llmResult = await callApi(key, remaining);
+      if (Array.isArray(llmResult) && llmResult.length === expectedLen) {
         return llmResult.map((item, idx) => (isUsableLlmItem(item) ? item : fallback[idx]));
       }
     } catch (err: any) {
-      console.warn(`Mistral API interpretation failed or timed out (${err.message}). Using deterministic fallback parser.`);
+      const msg = String(err?.message || err);
+      markCooldown(label, key, msg, usable.length - i - 1);
+      const tryNext = /HTTP 429|HTTP 401|HTTP 403|HTTP 404|HTTP 5\d\d/.test(msg);
+      if (tryNext && i < usable.length - 1) {
+        console.warn(`${label} key ${i + 1}/${usable.length} failed (${msg.split(':')[0]}). Trying next key.`);
+        continue;
+      }
+      console.warn(`${label} interpretation failed (${msg.split(':')[0] || msg}).`);
+      break;
     }
   }
+  return null;
+}
 
-  return fallback;
+function buildLlmPrompt(operatorNotes: string[], battery: BatterySpec): { systemPrompt: string; userPrompt: string } {
+  const systemPrompt = `Interpret campus operator notes into JSON {"interpretations":[...]} — one object per note, note_index 0..${operatorNotes.length - 1}.
+Fields: note_index, applies, directive_type, structured_adjustment, explanation.
+Types:
+- solar_reduction {hours, factor} factor=REMAINING fraction (80% reduction=>0.2; "25% of forecast"=>0.25; half=>0.5)
+- minimum_battery_reserve {hours, minimum_energy_kwh} convert % using capacity ${battery.capacity_kwh} kWh
+- no_charge_window {hours}
+- no_discharge_window {hours}
+- max_grid_window {hours, max_grid_kwh}
+- no_op applies=false structured_adjustment=null
+Hours: unique ints 0-23 ascending, start-inclusive/end-exclusive. noon-2PM=[12,13]; 2AM-5AM=[2,3,4]; 6PM-9PM=[18,19,20]; 11AM-2PM=[11,12,13].
+applies=true except no_op. Distractors=no_op. Do not invent demand/tariff/battery limits.`;
+
+  const userPrompt = `Operator Notes to interpret:
+${operatorNotes.map((note, idx) => `[Note ${idx}]: "${note}"`).join('\n')}`;
+  return { systemPrompt, userPrompt };
 }
 
 function isUsableLlmItem(item: any): boolean {
@@ -58,44 +160,7 @@ async function callMistralApi(
   model: string,
   timeoutMs: number
 ): Promise<any[]> {
-  const systemPrompt = `You are an energy grid assistant interpreting operator notes for a 24-hour campus energy schedule.
-You must analyze each operator note and output a JSON object matching this schema:
-{
-  "interpretations": [
-    {
-      "note_index": number, // 0..N-1 matching input note order
-      "applies": boolean, // false ONLY if directive_type is "no_op", true for all others
-      "directive_type": "solar_reduction" | "minimum_battery_reserve" | "no_charge_window" | "no_discharge_window" | "max_grid_window" | "no_op",
-      "structured_adjustment": {
-        "hours": number[], // unique 0..23 integers in ascending order (start-inclusive, end-exclusive)
-        "factor": number, // for solar_reduction: USABLE FRACTION REMAINING (e.g. 80% reduction => factor: 0.2, 25% of forecast => factor: 0.25, half => factor: 0.5)
-        "minimum_energy_kwh": number, // for minimum_battery_reserve in kWh (if percentage given, compute % of battery capacity ${battery.capacity_kwh} kWh)
-        "max_grid_kwh": number // for max_grid_window in kWh per hour
-      } | null,
-      "explanation": "short human explanation"
-    }
-  ]
-}
-
-Strict Rules:
-1. Directive types allowed:
-   - "solar_reduction": Usable solar output is reduced. factor is fraction REMAINING (e.g., 80% reduction means 0.2 remaining).
-   - "minimum_battery_reserve": Battery energy must stay >= level in listed hours. If % given, convert to kWh using total capacity = ${battery.capacity_kwh} kWh.
-   - "no_charge_window": Battery charging is forbidden in listed hours.
-   - "no_discharge_window": Battery discharging is forbidden in listed hours.
-   - "max_grid_window": Grid import capped in listed hours.
-   - "no_op": Distractor / irrelevant note that does not affect today's energy schedule. applies must be false, structured_adjustment must be null.
-2. Time windows are start-inclusive and end-exclusive!
-   - "noon until 2 PM" -> [12, 13]
-   - "2 AM until 5 AM" -> [2, 3, 4]
-   - "6 PM until 9 PM" -> [18, 19, 20]
-   - "between 11 AM and 2 PM" -> [11, 12, 13]
-3. Exactly ONE interpretation per note, in note_index order 0..${operatorNotes.length - 1}.
-`;
-
-  const userPrompt = `Operator Notes to interpret:
-${operatorNotes.map((note, idx) => `[Note ${idx}]: "${note}"`).join('\n')}`;
-
+  const { systemPrompt, userPrompt } = buildLlmPrompt(operatorNotes, battery);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -109,7 +174,7 @@ ${operatorNotes.map((note, idx) => `[Note ${idx}]: "${note}"`).join('\n')}`;
       body: JSON.stringify({
         model,
         temperature: 0.0,
-        max_tokens: 1024,
+        max_tokens: 512,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },
@@ -128,12 +193,20 @@ ${operatorNotes.map((note, idx) => `[Note ${idx}]: "${note}"`).join('\n')}`;
     if (!content) {
       throw new Error('Empty response content from Mistral API');
     }
-
-    const parsed = JSON.parse(content);
-    return parsed.interpretations || parsed.directive_interpretation || parsed;
+    return parseInterpretationPayload(content);
   } finally {
     clearTimeout(timer);
   }
+}
+
+function parseInterpretationPayload(content: string): any[] {
+  const trimmed = content.trim();
+  const jsonText =
+    trimmed.startsWith('{') || trimmed.startsWith('[')
+      ? trimmed
+      : (trimmed.match(/\{[\s\S]*\}/) || [trimmed])[0];
+  const parsed = JSON.parse(jsonText);
+  return parsed.interpretations || parsed.directive_interpretation || parsed;
 }
 
 export function parseNotesDeterministic(

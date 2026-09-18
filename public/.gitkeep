@@ -1,0 +1,2 @@
+# Placeholder so Vercel has a static output directory.
+# All HTTP traffic is rewritten to api/index.ts.

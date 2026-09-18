@@ -2,12 +2,12 @@
   "name": "@gridwise/api",
   "version": "1.0.0",
   "type": "module",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
+  "main": "./dist/app.js",
+  "module": "./dist/app.js",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/app.js"
   },
-  "types": "./dist/index.d.ts",
+  "types": "./dist/app.d.ts",
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",

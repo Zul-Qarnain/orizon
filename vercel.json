@@ -1,9 +1,11 @@
 {
   "version": 2,
+  "regions": ["cdg1"],
+  "outputDirectory": "public",
   "functions": {
     "api/index.ts": {
       "maxDuration": 30,
-      "includeFiles": "problem_doc/**"
+      "includeFiles": "problem_doc/*.json"
     }
   },
   "rewrites": [

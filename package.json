@@ -6,8 +6,12 @@
   "workspaces": [
     "packages/*"
   ],
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
-    "build": "npm run --workspaces --if-present build",
+    "build": "npm run --workspace=@gridwise/shared-types build && npm run --workspace=@gridwise/llm-interpreter build && npm run --workspace=@gridwise/guardrails build && npm run --workspace=@gridwise/optimizer build && npm run --workspace=@gridwise/schedule-validator build && npm run --workspace=@gridwise/api build",
+    "vercel-build": "npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "start": "npm run --workspace=packages/api start",
