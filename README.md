@@ -254,7 +254,7 @@ curl -s http://127.0.0.1:3000/health
 # {"status":"ok"}
 ```
 
-Dashboard (not scored): http://127.0.0.1:3000 — pick SAMPLE-01, Run.
+Dashboard (not scored): http://127.0.0.1:3000 — upload a scenario JSON, edit Raw JSON, or pick SAMPLE-01 and Run. Pack files with `cases[]` can be batch-tested from the same page.
 
 `npm test` posts all **10** public cases from `problem_doc/BUP_CSE_FEST_2026_Preli_Public_Sample_Cases.json` into the in-process API and checks interpretation + schedule replay.
 

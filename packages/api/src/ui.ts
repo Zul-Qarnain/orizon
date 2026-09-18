@@ -9,6 +9,11 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
     body { font-family: 'Inter', sans-serif; }
+    .upload-zone { border: 2px dashed rgba(16,185,129,0.35); background: rgba(16,185,129,0.05); }
+    .upload-zone:hover, .upload-zone.dragover { border-color: #34d399; background: rgba(16,185,129,0.12); }
+    .tab-btn { background: transparent; border: 1px solid transparent; }
+    .tab-btn.active { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.35); color: #6ee7b7; }
+    #scenarioJson { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
@@ -95,8 +100,8 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
       </h2>
       <p class="text-xs text-slate-400 mb-4">This page talks to the same endpoints the judge uses. No login required.</p>
       <ol class="text-sm text-slate-200 space-y-2 list-decimal list-inside mb-4">
-        <li>Pick a public sample below, or type 1–3 operator notes yourself.</li>
-        <li>Click <span class="text-emerald-400 font-semibold">Run Optimization Pipeline</span>.</li>
+        <li>Upload a scenario JSON, edit Raw JSON, or fill the visual form. Official pack files with <code class="text-slate-300">cases[]</code> run as a batch.</li>
+        <li>Click <span class="text-emerald-400 font-semibold">Run this scenario</span> or <span class="text-cyan-400 font-semibold">Run all loaded cases</span>.</li>
         <li>Read interpreted directives, cost, and the 24-hour schedule on the right.</li>
       </ol>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-3">
@@ -133,11 +138,18 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
     <!-- Left Column: Input Form & Sample Case Selector -->
     <section class="lg:col-span-5 space-y-6">
       
-      <!-- Preset Case Picker -->
-      <div class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl">
-        <label class="block text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-2">
-          <i class="fa-solid fa-folder-open mr-1.5"></i> Load Official Public Sample Case
-        </label>
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-white">Scenario input</h2>
+          <span class="text-xs text-slate-400">Upload, JSON editor, or form</span>
+        </div>
+        <div id="dropZone" class="upload-zone rounded-xl p-4 text-center cursor-pointer">
+          <input type="file" id="fileInput" class="hidden" accept=".json,application/json" />
+          <p class="text-sm text-slate-200 font-medium"><i class="fa-solid fa-cloud-arrow-up mr-1.5 text-emerald-400"></i> Click to upload or drag &amp; drop JSON</p>
+          <p class="text-xs text-slate-500 mt-1">One scenario, <code class="text-slate-400">{ "input": ... }</code>, or a <code class="text-slate-400">cases[]</code> batch pack</p>
+          <p id="uploadStatus" class="text-xs text-emerald-400 mt-2"></p>
+        </div>
+        <label class="block text-xs font-semibold text-emerald-400 uppercase tracking-wider">Load official public sample</label>
         <select id="sampleSelect" onchange="loadSampleCase()" class="w-full bg-slate-900 border border-slate-700 text-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 transition">
           <option value="">-- Select a Public Sample Case --</option>
           <option value="SAMPLE-01">SAMPLE-01: Solar Cleaning + Distractor</option>
@@ -151,10 +163,26 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
           <option value="SAMPLE-09">SAMPLE-09: Reduction Wording Normalization</option>
           <option value="SAMPLE-10">SAMPLE-10: Multi-Constraint Evening Operation</option>
         </select>
+        <div class="flex gap-2 text-xs">
+          <button type="button" id="tabJsonBtn" class="tab-btn active px-3 py-1.5 rounded-lg text-slate-300" onclick="setInputTab('json')">Raw JSON</button>
+          <button type="button" id="tabFormBtn" class="tab-btn px-3 py-1.5 rounded-lg text-slate-300" onclick="setInputTab('form')">Visual form</button>
+        </div>
+      </div>
+
+      <div id="rawJsonView" class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl space-y-3">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Editable scenario JSON</label>
+          <div class="flex gap-2">
+            <button type="button" onclick="formatScenarioJson()" class="px-2 py-1 text-xs rounded-lg bg-slate-900 border border-slate-600 hover:border-emerald-500 text-slate-200">Format</button>
+            <button type="button" onclick="downloadScenarioJson()" class="px-2 py-1 text-xs rounded-lg bg-slate-900 border border-slate-600 hover:border-cyan-500 text-slate-200">Download</button>
+          </div>
+        </div>
+        <textarea id="scenarioJson" rows="16" spellcheck="false" class="w-full bg-slate-950 border border-slate-700 rounded-xl p-3 text-[11px] leading-5 text-cyan-300 focus:outline-none focus:border-emerald-500"></textarea>
+        <p id="jsonStatus" class="text-xs text-slate-500"></p>
       </div>
 
       <!-- Request Details Card -->
-      <div class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl space-y-5">
+      <div id="formView" class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl space-y-5" style="display:none;">
         
         <div>
           <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Scenario ID</label>
@@ -201,13 +229,18 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
             </div>
           </div>
         </div>
+      </div>
 
-        <!-- Execute Button -->
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl space-y-3">
         <button onclick="runOptimization()" id="runBtn" class="w-full py-3.5 px-6 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold rounded-xl shadow-lg shadow-emerald-500/20 transition transform active:scale-95 flex items-center justify-center space-x-2">
           <i class="fa-solid fa-play"></i>
-          <span>Run Optimization Pipeline</span>
+          <span>Run this scenario</span>
         </button>
-
+        <button onclick="runBatch()" id="batchBtn" class="w-full py-2.5 px-6 bg-slate-900 border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 font-semibold rounded-xl text-sm flex items-center justify-center space-x-2">
+          <i class="fa-solid fa-layer-group"></i>
+          <span>Run all loaded cases</span>
+        </button>
+        <p id="batchHint" class="text-xs text-slate-500">Load a pack JSON or keep the 10 public samples to batch-test.</p>
       </div>
     </section>
 
@@ -246,6 +279,31 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
         <div id="directivesContainer" class="space-y-2 text-xs text-slate-400">
           No directives interpreted yet.
         </div>
+      </div>
+
+      <div class="bg-slate-800/50 border border-slate-700/60 rounded-2xl p-5 shadow-xl overflow-hidden">
+        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+          <i class="fa-solid fa-list-check mr-1.5 text-cyan-400"></i> Batch results
+        </h3>
+        <div class="overflow-x-auto max-h-64">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-slate-950 text-slate-400 uppercase sticky top-0">
+              <tr>
+                <th class="py-2 px-2">Case</th>
+                <th class="py-2 px-2">Status</th>
+                <th class="py-2 px-2">Cost</th>
+                <th class="py-2 px-2">Peak</th>
+                <th class="py-2 px-2">Time</th>
+              </tr>
+            </thead>
+            <tbody id="batchTableBody" class="divide-y divide-slate-800/60 text-slate-200">
+              <tr>
+                <td colspan="5" class="py-3 text-center text-slate-500">Upload a pack or click Run all loaded cases.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p id="batchSummary" class="text-xs text-slate-500 mt-2"></p>
       </div>
 
       <!-- 24-Hour Schedule Table -->
@@ -310,9 +368,188 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
     ];
 
     let currentHoursData = DEFAULT_HOURS;
+    let inputTab = 'json';
+    let loadedCases = [];
 
     function apiBase() {
       return window.location.origin;
+    }
+
+    function setJsonStatus(msg, ok) {
+      const el = document.getElementById('jsonStatus');
+      el.className = 'text-xs ' + (ok === false ? 'text-rose-400' : 'text-slate-500');
+      el.innerText = msg || '';
+    }
+
+    function applyScenarioToForm(input) {
+      if (!input || typeof input !== 'object') return;
+      document.getElementById('scenarioId').value = input.scenario_id || '';
+      const notes = input.operator_notes || [];
+      document.getElementById('note1').value = notes[0] || '';
+      document.getElementById('note2').value = notes[1] || '';
+      document.getElementById('note3').value = notes[2] || '';
+      if (input.battery) {
+        document.getElementById('batCapacity').value = input.battery.capacity_kwh;
+        document.getElementById('batInitial').value = input.battery.initial_energy_kwh;
+        document.getElementById('batMin').value = input.battery.minimum_energy_kwh;
+        document.getElementById('batMaxCharge').value = input.battery.max_charge_kwh_per_hour;
+        document.getElementById('batMaxDischarge').value = input.battery.max_discharge_kwh_per_hour;
+      }
+      if (Array.isArray(input.hours) && input.hours.length === 24) {
+        currentHoursData = input.hours;
+      }
+    }
+
+    function syncFormToJson() {
+      document.getElementById('scenarioJson').value = JSON.stringify(buildRequestBody(), null, 2);
+      setJsonStatus('Synced from form.');
+    }
+
+    function parseScenarioJson() {
+      const raw = document.getElementById('scenarioJson').value.trim();
+      if (!raw) throw new Error('JSON editor is empty.');
+      const parsed = JSON.parse(raw);
+      const input = parsed.input && parsed.input.scenario_id ? parsed.input : parsed;
+      if (!input.scenario_id || !Array.isArray(input.hours) || !input.battery) {
+        throw new Error('JSON must include scenario_id, hours[24], battery, operator_notes.');
+      }
+      return input;
+    }
+
+    function setInputTab(tab) {
+      inputTab = tab;
+      const jsonBtn = document.getElementById('tabJsonBtn');
+      const formBtn = document.getElementById('tabFormBtn');
+      const jsonView = document.getElementById('rawJsonView');
+      const formView = document.getElementById('formView');
+      if (tab === 'form') {
+        try {
+          applyScenarioToForm(parseScenarioJson());
+        } catch (e) {
+          setJsonStatus(e.message, false);
+        }
+        jsonBtn.classList.remove('active');
+        formBtn.classList.add('active');
+        jsonView.style.display = 'none';
+        formView.style.display = 'block';
+      } else {
+        syncFormToJson();
+        formBtn.classList.remove('active');
+        jsonBtn.classList.add('active');
+        jsonView.style.display = 'block';
+        formView.style.display = 'none';
+      }
+    }
+
+    function getActiveRequestBody() {
+      if (inputTab === 'json') {
+        const input = parseScenarioJson();
+        applyScenarioToForm(input);
+        return input;
+      }
+      const body = buildRequestBody();
+      document.getElementById('scenarioJson').value = JSON.stringify(body, null, 2);
+      return body;
+    }
+
+    function normalizeCase(item, idx) {
+      if (!item || typeof item !== 'object') return null;
+      if (item.input && item.input.scenario_id) {
+        return {
+          id: item.id || item.input.scenario_id,
+          input: item.input,
+          expected: item.expected_output || null
+        };
+      }
+      if (item.scenario_id && item.hours && item.battery) {
+        return { id: item.scenario_id, input: item, expected: null };
+      }
+      return null;
+    }
+
+    function extractCases(parsed) {
+      if (Array.isArray(parsed)) {
+        return parsed.map(normalizeCase).filter(Boolean);
+      }
+      if (parsed && Array.isArray(parsed.cases)) {
+        return parsed.cases.map(normalizeCase).filter(Boolean);
+      }
+      const one = normalizeCase(parsed, 0);
+      return one ? [one] : [];
+    }
+
+    function updateBatchHint() {
+      const n = loadedCases.length;
+      document.getElementById('batchHint').innerText = n
+        ? n + ' case' + (n === 1 ? '' : 's') + ' loaded. Run all posts each to POST /optimize-energy.'
+        : 'Load a pack JSON or keep the 10 public samples to batch-test.';
+    }
+
+    function formatScenarioJson() {
+      try {
+        const input = parseScenarioJson();
+        document.getElementById('scenarioJson').value = JSON.stringify(input, null, 2);
+        applyScenarioToForm(input);
+        setJsonStatus('Valid JSON.');
+      } catch (e) {
+        setJsonStatus(e.message, false);
+      }
+    }
+
+    function downloadScenarioJson() {
+      try {
+        const body = getActiveRequestBody();
+        const blob = new Blob([JSON.stringify(body, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (body.scenario_id || 'scenario') + '.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      } catch (e) {
+        setJsonStatus(e.message, false);
+      }
+    }
+
+    function handleJsonFile(file) {
+      const reader = new FileReader();
+      reader.onload = function (ev) {
+        try {
+          const parsed = JSON.parse(String(ev.target.result || ''));
+          const cases = extractCases(parsed);
+          if (!cases.length) throw new Error('No scenario objects found in that file.');
+          loadedCases = cases;
+          applyScenarioToForm(cases[0].input);
+          document.getElementById('scenarioJson').value = JSON.stringify(cases[0].input, null, 2);
+          document.getElementById('sampleSelect').value = '';
+          document.getElementById('uploadStatus').innerText = 'Loaded ' + file.name + ' · ' + cases.length + ' case' + (cases.length === 1 ? '' : 's');
+          updateBatchHint();
+          setJsonStatus('Loaded from file.');
+          refreshCurlSamples();
+        } catch (err) {
+          document.getElementById('uploadStatus').innerText = '';
+          alert('Invalid JSON file: ' + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function bindUploadZone() {
+      const zone = document.getElementById('dropZone');
+      const input = document.getElementById('fileInput');
+      zone.addEventListener('click', function () { input.click(); });
+      input.addEventListener('change', function (e) {
+        if (e.target.files[0]) handleJsonFile(e.target.files[0]);
+      });
+      zone.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        zone.classList.add('dragover');
+      });
+      zone.addEventListener('dragleave', function () { zone.classList.remove('dragover'); });
+      zone.addEventListener('drop', function (e) {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        if (e.dataTransfer.files[0]) handleJsonFile(e.dataTransfer.files[0]);
+      });
     }
 
     function buildRequestBody() {
@@ -410,20 +647,13 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
         }
 
         if (samplePackData && samplePackData.cases) {
+          loadedCases = extractCases(samplePackData);
+          updateBatchHint();
           const found = samplePackData.cases.find(c => c.id === caseId);
           if (found) {
-            document.getElementById('scenarioId').value = found.input.scenario_id;
-            document.getElementById('note1').value = found.input.operator_notes[0] || '';
-            document.getElementById('note2').value = found.input.operator_notes[1] || '';
-            document.getElementById('note3').value = found.input.operator_notes[2] || '';
-
-            document.getElementById('batCapacity').value = found.input.battery.capacity_kwh;
-            document.getElementById('batInitial').value = found.input.battery.initial_energy_kwh;
-            document.getElementById('batMin').value = found.input.battery.minimum_energy_kwh;
-            document.getElementById('batMaxCharge').value = found.input.battery.max_charge_kwh_per_hour;
-            document.getElementById('batMaxDischarge').value = found.input.battery.max_discharge_kwh_per_hour;
-
-            currentHoursData = found.input.hours;
+            applyScenarioToForm(found.input);
+            document.getElementById('scenarioJson').value = JSON.stringify(found.input, null, 2);
+            setJsonStatus('Loaded ' + caseId);
             refreshCurlSamples();
           }
         }
@@ -437,7 +667,15 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
       runBtn.disabled = true;
       runBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> <span>Optimizing...</span>';
 
-      const requestBody = buildRequestBody();
+      let requestBody;
+      try {
+        requestBody = getActiveRequestBody();
+      } catch (err) {
+        alert(err.message);
+        runBtn.disabled = false;
+        runBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Run this scenario</span>';
+        return;
+      }
 
       try {
         const res = await fetch('/optimize-energy', {
@@ -457,7 +695,7 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
         alert('Request failed: ' + err.message);
       } finally {
         runBtn.disabled = false;
-        runBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Run Optimization Pipeline</span>';
+        runBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span>Run this scenario</span>';
       }
     }
 
@@ -510,8 +748,71 @@ export const TEST_UI_HTML = `<!DOCTYPE html>
       });
     }
 
+    async function ensureSamplePack() {
+      if (samplePackData) return samplePackData;
+      const res = await fetch('/sample-pack.json');
+      if (!res.ok) throw new Error('Could not load public sample pack.');
+      samplePackData = await res.json();
+      return samplePackData;
+    }
+
+    async function runBatch() {
+      const batchBtn = document.getElementById('batchBtn');
+      const tbody = document.getElementById('batchTableBody');
+      const summary = document.getElementById('batchSummary');
+      batchBtn.disabled = true;
+      try {
+        if (!loadedCases.length) {
+          await ensureSamplePack();
+          loadedCases = extractCases(samplePackData);
+          updateBatchHint();
+        }
+        if (!loadedCases.length) throw new Error('No cases loaded.');
+        tbody.innerHTML = '';
+        let pass = 0;
+        let fail = 0;
+        for (let i = 0; i < loadedCases.length; i++) {
+          const item = loadedCases[i];
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td class="py-2 px-2 font-mono">' + item.id + '</td><td class="py-2 px-2 text-slate-400" colspan="4">running…</td>';
+          tbody.appendChild(tr);
+          const started = performance.now();
+          try {
+            const res = await fetch('/optimize-energy', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(item.input)
+            });
+            const data = await res.json();
+            const ms = ((performance.now() - started) / 1000).toFixed(3);
+            const expectedCost = item.expected && item.expected.total_cost_bdt;
+            const costOk = expectedCost == null || data.total_cost_bdt === expectedCost;
+            const ok = res.ok && costOk;
+            if (ok) pass += 1; else fail += 1;
+            const status = !res.ok ? ('HTTP ' + res.status) : (costOk ? 'PASS' : 'COST MISMATCH');
+            tr.innerHTML =
+              '<td class="py-2 px-2 font-mono">' + item.id + '</td>' +
+              '<td class="py-2 px-2 ' + (ok ? 'text-emerald-400' : 'text-rose-400') + '">' + status + '</td>' +
+              '<td class="py-2 px-2">' + (data.total_cost_bdt != null ? data.total_cost_bdt : '—') + '</td>' +
+              '<td class="py-2 px-2">' + (data.peak_grid_kwh != null ? data.peak_grid_kwh : '—') + '</td>' +
+              '<td class="py-2 px-2">' + ms + 's</td>';
+            if (i === loadedCases.length - 1 && res.ok) renderResults(data);
+          } catch (err) {
+            fail += 1;
+            tr.innerHTML = '<td class="py-2 px-2 font-mono">' + item.id + '</td><td class="py-2 px-2 text-rose-400" colspan="4">' + err.message + '</td>';
+          }
+        }
+        summary.innerText = 'Passed ' + pass + ' / ' + (pass + fail) + '. Last plan is shown below.';
+      } catch (err) {
+        alert(err.message);
+      } finally {
+        batchBtn.disabled = false;
+      }
+    }
+
     // Auto load default case 1 on start
     window.addEventListener('DOMContentLoaded', () => {
+      bindUploadZone();
       refreshCurlSamples();
       pingHealth();
       document.getElementById('sampleSelect').value = 'SAMPLE-01';
