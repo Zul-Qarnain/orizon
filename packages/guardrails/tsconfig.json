@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@gridwise/shared-types": ["../shared-types/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}

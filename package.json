@@ -1,0 +1,26 @@
+{
+  "name": "gridwise-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GridWise LLM - Smart Campus Energy Optimization Engine",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run --workspaces --if-present build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "start": "npm run --workspace=packages/api start",
+    "dev": "npm run --workspace=packages/api dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "fastify": "^5.12.5",
+    "javascript-lp-solver": "^1.0.3"
+  }
+}

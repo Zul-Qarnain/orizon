@@ -1,0 +1,24 @@
+{
+  "name": "@gridwise/api",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@gridwise/shared-types": "*",
+    "@gridwise/llm-interpreter": "*",
+    "@gridwise/guardrails": "*",
+    "@gridwise/optimizer": "*",
+    "@gridwise/schedule-validator": "*",
+    "fastify": "^5.0.0"
+  }
+}

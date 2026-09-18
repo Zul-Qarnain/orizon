@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs & caches
+dist/
+*.tsbuildinfo
+.next/
+.vercel/
+
+# Generated JS and type declarations inside src/
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map
+api/index.js
+api/index.d.ts
+api/index.js.map
+api/index.d.ts.map
+
+# Secrets & Environment variables
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Logs & temp files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / IDE / Temp files
+.DS_Store
+.directory
+.vscode/
+.idea/
+.marscode/
+participant_guide.txt
+problem_statement.txt
+REQUIREMENTS_CHECK.md

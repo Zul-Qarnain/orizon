@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@gridwise/shared-types": ["../shared-types/dist/index.d.ts"],
+      "@gridwise/guardrails": ["../guardrails/dist/index.d.ts"],
+      "@gridwise/llm-interpreter": ["../llm-interpreter/dist/index.d.ts"],
+      "@gridwise/optimizer": ["../optimizer/dist/index.d.ts"],
+      "@gridwise/schedule-validator": ["../schedule-validator/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*"]
+}

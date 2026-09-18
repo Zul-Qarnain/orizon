@@ -1,0 +1,18 @@
+{
+  "name": "@gridwise/optimizer",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@gridwise/shared-types": "*",
+    "javascript-lp-solver": "^0.4.24"
+  }
+}
