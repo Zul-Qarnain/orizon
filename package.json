@@ -24,7 +24,7 @@
     "vitest": "^4.1.11"
   },
   "dependencies": {
-    "fastify": "^5.12.5",
+    "fastify": "^5.12.7",
     "javascript-lp-solver": "^1.0.3"
   }
 }
